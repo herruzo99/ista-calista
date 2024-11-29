@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 import logging
+from typing import Callable, Dict
 
 from homeassistant.components.recorder.models.statistics import (
     StatisticData,
@@ -27,7 +28,6 @@ from homeassistant.const import UnitOfVolume
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import (
     DeviceEntry,
-    DeviceEntryType,
     DeviceInfo,
 )
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -37,9 +37,9 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import IstaConfigEntry
 from .const import DOMAIN
 from .coordinator import IstaCoordinator
-from .util import IstaValueType, get_native_value, get_statistics
 
 _LOGGER = logging.getLogger(__name__)
+
 
 class IstaConsumptionType(StrEnum):
     """Types of consumptions from ista."""
@@ -48,47 +48,48 @@ class IstaConsumptionType(StrEnum):
     HOT_WATER = "warmwater"
     WATER = "water"
 
+
 @dataclass(kw_only=True)
 class CalistaSensorEntityDescription(SensorEntityDescription):
     """Describes Ista Calista sensor entity."""
 
     exists_fn: Callable[[Dict[str, any]], bool] = lambda _: True
     value_fn: Callable[[Dict[str, any]], StateType]
+
+
 SENSOR_DESCRIPTIONS: tuple[CalistaSensorEntityDescription, ...] = (
     CalistaSensorEntityDescription(
         key="total_volume",
-        translation_key='water',
+        translation_key="water",
         native_unit_of_measurement=UnitOfVolume.CUBIC_METERS,
         device_class=SensorDeviceClass.WATER,
         state_class=SensorStateClass.TOTAL,
-        value_fn=lambda data: data['lectura_actual'],
-        exists_fn=lambda data: data['tipo_equipo'] != 'Radio Distribuidor de Costes de Calefacción'
-
-
+        value_fn=lambda data: data["lectura_actual"],
+        exists_fn=lambda data: data["tipo_equipo"]
+        != "Radio Distribuidor de Costes de Calefacción",
     ),
     CalistaSensorEntityDescription(
         key="relative_heating",
-        translation_key='heating',
+        translation_key="heating",
         native_unit_of_measurement=None,
         device_class=None,
         state_class=SensorStateClass.TOTAL,
-        value_fn=lambda data: data['lectura_actual'],
-        exists_fn=lambda data: data['tipo_equipo'] == 'Radio Distribuidor de Costes de Calefacción'
-
+        value_fn=lambda data: data["lectura_actual"],
+        exists_fn=lambda data: data["tipo_equipo"]
+        == "Radio Distribuidor de Costes de Calefacción",
     ),
     CalistaSensorEntityDescription(
         key="last_reading",
-        translation_key='last_date',
+        translation_key="last_date",
         native_unit_of_measurement=None,
         device_class=SensorDeviceClass.DATE,
         state_class=None,
-        value_fn=lambda data: datetime.strptime(data['fecha'],  "%d/%m/%Y"),
-        exists_fn=lambda data: True
-
+        value_fn=lambda data: datetime.strptime(data["fecha"], "%d/%m/%Y"),
+        exists_fn=lambda data: True,
     ),
 )
 
-import json
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: IstaConfigEntry,
@@ -97,18 +98,21 @@ async def async_setup_entry(
     """Set up the ista Calista sensors."""
 
     coordinator = config_entry.runtime_data
-    
+
     # Check if coordinator is ready and data is available
     if coordinator.data is None:
         # If data is not available, wait for it asynchronously
         await coordinator.async_refresh()
         # Ensure the data is populated after refresh
         if coordinator.data is None:
-            return  False # No data available, so we stop setting up the entities
+            return False  # No data available, so we stop setting up the entities
 
-    _LOGGER.info( (sensor_id, data, description) for description in SENSOR_DESCRIPTIONS
+    _LOGGER.info(
+        (sensor_id, data, description)
+        for description in SENSOR_DESCRIPTIONS
         for sensor_id, data in coordinator.data.items()
-        if description.exists_fn(data))
+        if description.exists_fn(data)
+    )
 
     async_add_entities(
         IstaSensor(coordinator, sensor_id, data, description)
@@ -121,7 +125,7 @@ async def async_setup_entry(
 class IstaSensor(CoordinatorEntity[IstaCoordinator], SensorEntity):
     """Ista Calista sensor."""
 
-    entity_description: IstaSensorEntityDescription
+    entity_description: CalistaSensorEntityDescription
     _attr_has_entity_name = True
     device_entry: DeviceEntry
 
@@ -130,7 +134,7 @@ class IstaSensor(CoordinatorEntity[IstaCoordinator], SensorEntity):
         coordinator: IstaCoordinator,
         sensor_id: str,
         data: str,
-        entity_description
+        entity_description,
     ) -> None:
         """Initialize the ista Calista sensor."""
         super().__init__(coordinator)
@@ -149,6 +153,7 @@ class IstaSensor(CoordinatorEntity[IstaCoordinator], SensorEntity):
             model="ista Calista",
             model_id="TBD",
         )
+
     @property
     def native_value(self) -> StateType | datetime:
         """Return the state of the device."""
