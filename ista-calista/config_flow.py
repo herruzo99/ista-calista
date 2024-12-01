@@ -2,22 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import logging
 from typing import TYPE_CHECKING, Any
 
-from .pycalista_ista import LoginError, PyCalistaIsta, ServerError
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
-from homeassistant.const import CONF_EMAIL, CONF_NAME, CONF_PASSWORD
+from homeassistant.const import CONF_EMAIL, CONF_OFFSET, CONF_PASSWORD
 from homeassistant.helpers.selector import (
+    DateSelector,
+    DateSelectorConfig,
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
 )
 
 from .const import DOMAIN
+from .pycalista_ista import LoginError, PyCalistaIsta, ServerError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,6 +34,10 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
             TextSelectorConfig(
                 type=TextSelectorType.PASSWORD,
                 autocomplete="current-password",
+            )
+        ),
+        vol.Required(CONF_OFFSET): DateSelector(
+            DateSelectorConfig(
             )
         ),
     }
@@ -54,6 +59,7 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             )
             try:
                 await self.hass.async_add_executor_job(ista.login)
+                ista.import_datetime_start = user_input[CONF_OFFSET]
                 info = ista.get_account()
             except ServerError:
                 errors["base"] = "cannot_connect"
@@ -77,52 +83,5 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=self.add_suggested_values_to_schema(
                 data_schema=STEP_USER_DATA_SCHEMA, suggested_values=user_input
             ),
-            errors=errors,
-        )
-
-    async def async_step_reauth(
-        self, entry_data: Mapping[str, Any]
-    ) -> ConfigFlowResult:
-        """Perform reauth upon an API authentication error."""
-        return await self.async_step_reauth_confirm()
-
-    async def async_step_reauth_confirm(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Dialog that informs the user that reauth is required."""
-        errors: dict[str, str] = {}
-
-        reauth_entry = self._get_reauth_entry()
-        if user_input is not None:
-            ista = PyCalistaIsta(
-                user_input[CONF_EMAIL],
-                user_input[CONF_PASSWORD],
-            )
-            try:
-                await self.hass.async_add_executor_job(ista.login)
-            except ServerError:
-                errors["base"] = "cannot_connect"
-            except (LoginError):
-                errors["base"] = "invalid_auth"
-            except Exception:
-                _LOGGER.exception("Unexpected exception")
-                errors["base"] = "unknown"
-            else:
-                return self.async_update_reload_and_abort(reauth_entry, data=user_input)
-
-        return self.async_show_form(
-            step_id="reauth_confirm",
-            data_schema=self.add_suggested_values_to_schema(
-                data_schema=STEP_USER_DATA_SCHEMA,
-                suggested_values={
-                    CONF_EMAIL: user_input[CONF_EMAIL]
-                    if user_input is not None
-                    else reauth_entry.data[CONF_EMAIL]
-                },
-            ),
-            description_placeholders={
-                CONF_NAME: reauth_entry.title,
-                CONF_EMAIL: reauth_entry.data[CONF_EMAIL],
-            },
             errors=errors,
         )
