@@ -7,6 +7,9 @@
       "water": {
         "default": "mdi:faucet"
       },
+      "hot_water": {
+        "default": "mdi:faucet"
+      },
       "last_date": {
         "default": "mdi:calendar"
       }
