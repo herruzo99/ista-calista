@@ -1,49 +1,30 @@
-"""Support for Ista Calista sensors.
-
-This platform provides sensors for monitoring utility consumption data from Ista Calista,
-including water (hot and cold) and heating meters. It supports:
-- Historical data tracking
-- Long-term statistics generation
-- Multiple device types and locations
-
-For more information about this integration, please visit:
-https://www.home-assistant.io/integrations/ista_calista/
-
-Example configuration.yaml entry:
-```yaml
-sensor:
-  - platform: ista_calista
-    email: YOUR_EMAIL
-    password: YOUR_PASSWORD
-```
-"""
-
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+import logging
 from typing import Final
 
+from pycalista_ista import ColdWaterDevice, Device, HeatingDevice, HotWaterDevice
+
 from homeassistant.components.recorder.models.statistics import (
-    StatisticData, StatisticMetaData)
+    StatisticData,
+    StatisticMetaData,
+)
 from homeassistant.components.recorder.statistics import (
-    async_add_external_statistics, get_instance, get_last_statistics)
+    async_add_external_statistics,
+    get_instance,
+    get_last_statistics,
+)
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import (
-    STATE_UNAVAILABLE,
-    STATE_UNKNOWN,
-    UnitOfEnergy,
-    UnitOfVolume,
-    EntityCategory,
-)
+from homeassistant.const import STATE_UNKNOWN, EntityCategory, UnitOfVolume
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntry, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -51,18 +32,13 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MANUFACTURER
-from .coordinator import IstaConfigEntry, IstaCoordinator, IstaDeviceData
-from pycalista_ista import (
-    ColdWaterDevice,
-    Device,
-    HeatingDevice,
-    HotWaterDevice,
-    WaterDevice,
-)
+from .coordinator import IstaConfigEntry, IstaCoordinator
+
+# Enhanced logging configuration
 _LOGGER: Final = logging.getLogger(__name__)
+_LOGGER.setLevel("DEBUG")
 # Coordinator is used to centralize the data updates
 PARALLEL_UPDATES = 0
-
 
 
 class IstaSensorEntity(StrEnum):
@@ -89,10 +65,6 @@ class CalistaSensorEntityDescription(SensorEntityDescription):
     value_fn: Callable[[Device], StateType]
     generate_lts: bool
     entity_category: EntityCategory | None = None
-    
-    consumption_type: IstaSensorEntity
-
-
 
 
 SENSOR_DESCRIPTIONS: Final[tuple[CalistaSensorEntityDescription, ...]] = (
@@ -166,13 +138,36 @@ async def async_setup_entry(
         async_add_entities: Callback to register new entities.
     """
     coordinator = config_entry.runtime_data
+    _LOGGER.debug("Setting up Ista Calista sensors with coordinator: %s", coordinator)
 
-    async_add_entities(
-        IstaSensor(coordinator, serial_number, description)
-        for description in SENSOR_DESCRIPTIONS
-        for serial_number, device in coordinator.data["devices"].items()
-        if description.exists_fn(device)
-    )
+    # Log device information
+    device_count = len(coordinator.data["devices"])
+    _LOGGER.debug("Found %d devices in coordinator data", device_count)
+    for serial_number, device in coordinator.data["devices"].items():
+        _LOGGER.debug(
+            "Device found - Serial: %s, Type: %s, Location: %s, Has readings: %s",
+            serial_number,
+            type(device).__name__,
+            device.location,
+            bool(device.last_reading),
+        )
+
+    entities = []
+    for description in SENSOR_DESCRIPTIONS:
+        for serial_number, device in coordinator.data["devices"].items():
+            if description.exists_fn(device):
+                entity_id = f"{serial_number}_{description.key}"
+                _LOGGER.debug(
+                    "[%s] Creating sensor - Serial: %s, Type: %s, Description: %s",
+                    entity_id,
+                    serial_number,
+                    type(device).__name__,
+                    description.key,
+                )
+                entities.append(IstaSensor(coordinator, serial_number, description))
+
+    _LOGGER.info("Adding %d Ista Calista sensor entities", len(entities))
+    async_add_entities(entities)
 
 
 class IstaSensor(CoordinatorEntity[IstaCoordinator], SensorEntity):
@@ -200,15 +195,22 @@ class IstaSensor(CoordinatorEntity[IstaCoordinator], SensorEntity):
             Device information for the device registry.
         """
         device = self.coordinator.data["devices"][self.serial_number]
-        return DeviceInfo(
+        device_info = DeviceInfo(
             identifiers={(DOMAIN, self.serial_number)},
             name=self._generate_name(device),
             manufacturer=MANUFACTURER,
             model="ista Calista",
             sw_version=self.coordinator.config_entry.version,
             configuration_url="https://oficina.ista.es/GesCon/MainPageAbo.do",
-            suggested_area=device.location if device.location else None,
         )
+        _LOGGER.debug(
+            "[%s] Device info for %s: name=%s, area=%s",
+            self._attr_unique_id,
+            self.serial_number,
+            device_info["name"],
+            device_info.get("suggested_area"),
+        )
+        return device_info
 
     def _generate_name(self, device: Device) -> str:
         """Generate a friendly name for the device.
@@ -222,12 +224,12 @@ class IstaSensor(CoordinatorEntity[IstaCoordinator], SensorEntity):
         if device.location:
             return device.location
         if isinstance(device, ColdWaterDevice):
-            return self.hass.config.language.get("sensor.water.name", "Water")
+            return "Water"
         if isinstance(device, HotWaterDevice):
-            return self.hass.config.language.get("sensor.hot_water.name", "Hot water")
+            return "Hot water"
         if isinstance(device, HeatingDevice):
-            return self.hass.config.language.get("sensor.heating.name", "Heating")
-        return self.hass.config.language.get("device.unknown", "Unknown")
+            return "Heating"
+        return "Unknown"
 
     def __init__(
         self,
@@ -248,26 +250,13 @@ class IstaSensor(CoordinatorEntity[IstaCoordinator], SensorEntity):
         self.entity_description = entity_description
         self._attr_entity_category = entity_description.entity_category
 
-    @property
-    def extra_state_attributes(self) -> dict[str, str]:
-        """Return additional state attributes.
-
-        Returns:
-            Dictionary of additional attributes to expose.
-        """
-        device = self.coordinator.data["devices"][self.serial_number]
-        attrs = {}
-
-        if isinstance(device, WaterDevice):
-            attrs["consumption_type"] = (
-                IstaSensorEntity.HOT_WATER
-                if isinstance(device, HotWaterDevice)
-                else IstaSensorEntity.WATER
-            )
-        elif isinstance(device, HeatingDevice):
-            attrs["consumption_type"] = IstaSensorEntity.HEATING
-
-        return attrs
+        _LOGGER.debug(
+            "[%s] Initialized IstaSensor - Serial: %s, Entity ID: %s, Type: %s",
+            self._attr_unique_id,
+            serial_number,
+            self._attr_unique_id,
+            entity_description.key,
+        )
 
     @property
     def native_value(self) -> StateType | datetime:
@@ -276,12 +265,20 @@ class IstaSensor(CoordinatorEntity[IstaCoordinator], SensorEntity):
         Returns:
             The current state value of the sensor, or STATE_UNKNOWN if no data available.
         """
+        try:
+            device = self.coordinator.data["devices"][self.serial_number]
+            value = self.entity_description.value_fn(device)
 
-        value = self.entity_description.value_fn(
-            self.coordinator.data["devices"][self.serial_number]
-        )
-        return value if value is not None else STATE_UNKNOWN
-
+            return value if value is not None else STATE_UNKNOWN
+        except Exception as err:
+            _LOGGER.error(
+                "[%s] Error getting native value for %s: %s",
+                self._attr_unique_id,
+                self._attr_unique_id,
+                str(err),
+                exc_info=True,
+            )
+            return STATE_UNKNOWN
 
     async def async_added_to_hass(self) -> None:
         """Handle entity which will be added.
@@ -289,32 +286,74 @@ class IstaSensor(CoordinatorEntity[IstaCoordinator], SensorEntity):
         Performs initial statistics import when sensor is added to avoid
         waiting for the first coordinator update.
         """
+        _LOGGER.debug(
+            "[%s] Entity description details - Key: %s, Generate LTS: %s",
+            self._attr_unique_id,
+            self.entity_description.key,
+            self.entity_description.generate_lts,
+        )
+
         if self.entity_description.generate_lts:
+            _LOGGER.debug(
+                "[%s] Generating initial statistics for %s",
+                self._attr_unique_id,
+                self._attr_unique_id,
+            )
             await self._update_statistics()
+        else:
+            _LOGGER.debug(
+                "[%s] Skipping statistics generation for %s (not enabled)",
+                self._attr_unique_id,
+                self._attr_unique_id,
+            )
+
         await super().async_added_to_hass()
 
     @callback
-    def _handle_coordinator_update(self) -> None:
+    async def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator.
 
         Updates statistics if enabled for this sensor.
         """
+        _LOGGER.debug(
+            "[%s] Coordinator update for %s", self._attr_unique_id, self._attr_unique_id
+        )
+
         if self.entity_description.generate_lts:
-            self.hass.async_create_task(self._update_statistics())
+            _LOGGER.debug(
+                "[%s] Scheduling statistics update for %s",
+                self._attr_unique_id,
+                self._attr_unique_id,
+            )
+            self._update_statistics()
+
         super()._handle_coordinator_update()
 
-    async def _update_statistics(self) -> None:
+    def _update_statistics(self) -> None:
         """Import historical statistics from Ista Calista.
 
         This method processes historical readings and generates long-term statistics
         for the sensor, including total consumption and state history.
         """
         try:
+            _LOGGER.debug(
+                "[%s] Updating statistics for %s",
+                self._attr_unique_id,
+                self._attr_unique_id,
+            )
+
+            # Get the saved statistics name or generate one
             name = self.coordinator.config_entry.options.get(
                 f"lts_{self.entity_description.key}_{self.serial_number}"
             )
             if not name:
                 name = self.entity_id.removeprefix("sensor.")
+                _LOGGER.debug(
+                    "[%s] No saved statistics name for %s, using %s",
+                    self._attr_unique_id,
+                    self._attr_unique_id,
+                    name,
+                )
                 self.hass.config_entries.async_update_entry(
                     entry=self.coordinator.config_entry,
                     options={
@@ -324,14 +363,29 @@ class IstaSensor(CoordinatorEntity[IstaCoordinator], SensorEntity):
                 )
 
             statistic_id = f"{DOMAIN}:{name}"
-            history = self.coordinator.data["devices"][self.serial_number].history
+            _LOGGER.debug("[%s] Statistics ID: %s", self._attr_unique_id, statistic_id)
 
-            last_stats_sum = 0.0
-            last_stats_state = 0.0
-            last_stats_date = None
-            last_stats_last_reset = history[0].date
+            # Get device history
+            device = self.coordinator.data["devices"][self.serial_number]
+            history = device.history
 
-            last_stats = await get_instance(self.hass).async_add_executor_job(
+            if not history:
+                _LOGGER.warning(
+                    "[%s] No history available for %s",
+                    self._attr_unique_id,
+                    self._attr_unique_id,
+                )
+                return
+
+            _LOGGER.debug(
+                "[%s] Found %d historical readings for %s",
+                self._attr_unique_id,
+                len(history),
+                self._attr_unique_id,
+            )
+
+            # Get last statistics from database
+            last_stats = get_instance(self.hass).async_add_executor_job(
                 get_last_statistics,
                 self.hass,
                 1,
@@ -340,9 +394,14 @@ class IstaSensor(CoordinatorEntity[IstaCoordinator], SensorEntity):
                 {"sum", "state", "last_reset"},
             )
 
-            if last_stats:
+            if last_stats and statistic_id in last_stats:
+                _LOGGER.debug(
+                    "[%s] Found existing statistics for %s",
+                    self._attr_unique_id,
+                    statistic_id,
+                )
                 last_stats_sum = last_stats[statistic_id][0].get("sum") or 0.0
-                last_stats_state = last_stats[statistic_id][0].get("state") or 0.0
+                last_stats_state = last_stats[statistic_id][0].get("state") or None
                 last_stats_last_reset = datetime.fromtimestamp(
                     last_stats[statistic_id][0].get("last_reset") or 0, tz=UTC
                 )
@@ -350,18 +409,64 @@ class IstaSensor(CoordinatorEntity[IstaCoordinator], SensorEntity):
                     last_stats[statistic_id][0].get("end") or 0, tz=UTC
                 ) + timedelta(days=1)
 
-            joined_history = []
-            for i, reading in enumerate(history):
-                current_reading = reading.reading
-                previous_reading = history[i - 1].reading if i > 0 else last_stats_state
+            else:
+                last_stats_sum = 0.0
+                last_stats_state = None
+                last_stats_date = None
+                last_stats_last_reset = history[0].date
 
+                _LOGGER.debug(
+                    "[%s] No existing statistics found for %s",
+                    self._attr_unique_id,
+                    statistic_id,
+                )
+            _LOGGER.debug(
+                "[%s] Last statistics - Sum: %f, State: %s, Last Reset: %s, Date: %s",
+                self._attr_unique_id,
+                last_stats_sum,
+                last_stats_state,
+                last_stats_last_reset,
+                last_stats_date,
+            )
+            readings_after_last_stats = [
+                reading
+                for reading in history
+                if last_stats_date is None or reading.date > last_stats_date
+            ]
+            # Process history and build statistics
+            joined_history = []
+            for i, reading in enumerate(readings_after_last_stats):
+                current_reading = reading.reading
+                previous_reading = (
+                    readings_after_last_stats[i - 1].reading
+                    if i > 0
+                    else last_stats_state
+                )
+
+                if previous_reading is None:
+                    previous_reading = current_reading
+
+                # Check for meter reset
                 if previous_reading > current_reading:
+                    _LOGGER.debug(
+                        "[%s] Meter reset detected at %s",
+                        self._attr_unique_id,
+                        reading.date,
+                    )
                     last_stats_last_reset = reading.date
                     consumption = 0
                 else:
                     consumption = current_reading - previous_reading
 
                 last_stats_sum += consumption
+                _LOGGER.debug(
+                    "[%s] Adding history point - Date: %s, Reading: %f, Last Reset: %s, Sum: %f",
+                    self._attr_unique_id,
+                    reading.date.isoformat(),
+                    current_reading,
+                    last_stats_last_reset.isoformat(),
+                    last_stats_sum,
+                )
                 joined_history.append(
                     {
                         "date": reading.date,
@@ -370,7 +475,9 @@ class IstaSensor(CoordinatorEntity[IstaCoordinator], SensorEntity):
                         "statistics_sum_diff": last_stats_sum,
                     }
                 )
+                _LOGGER.debug("[%s]%s", self._attr_unique_id, reading.date)
 
+            # Create statistics entries
             statistics: list[StatisticData] = [
                 {
                     "start": history_data["date"],
@@ -382,18 +489,48 @@ class IstaSensor(CoordinatorEntity[IstaCoordinator], SensorEntity):
                 if last_stats_date is None or history_data["date"] > last_stats_date
             ]
 
+            # Create statistics metadata
             metadata: StatisticMetaData = {
                 "has_mean": False,
                 "has_sum": True,
-                "name": f"{self._generate_name(self.coordinator.data['devices'][self.serial_number])} {self.name}",
+                "name": f"{self._generate_name(device)} {self.name}",
                 "source": DOMAIN,
                 "statistic_id": statistic_id,
                 "unit_of_measurement": self.entity_description.native_unit_of_measurement,
             }
 
             if statistics:
-                _LOGGER.debug("Inserting statistics: %s %s", metadata, statistics)
-                async_add_external_statistics(self.hass, metadata, statistics)
+                _LOGGER.info(
+                    "[%s] Inserting %d statistics entries for %s",
+                    self._attr_unique_id,
+                    len(statistics),
+                    statistic_id,
+                )
+                _LOGGER.debug(
+                    "[%s] Statistics metadata: %s", self._attr_unique_id, metadata
+                )
+                _LOGGER.debug(
+                    "[%s] First statistics entry: %s",
+                    self._attr_unique_id,
+                    statistics[0],
+                )
+                _LOGGER.debug(
+                    "[%s] Last statistics entry: %s",
+                    self._attr_unique_id,
+                    statistics[-1],
+                )
 
-        except Exception as err:
-            _LOGGER.error("Error updating statistics: %s", err)
+                async_add_external_statistics(self.hass, metadata, statistics)
+            else:
+                _LOGGER.debug(
+                    "[%s] No new statistics to insert for %s",
+                    self._attr_unique_id,
+                    statistic_id,
+                )
+
+        except Exception:
+            _LOGGER.exception(
+                "[%s] Error updating statistics for %s:",
+                self._attr_unique_id,
+                self._attr_unique_id,
+            )

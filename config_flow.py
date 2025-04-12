@@ -6,14 +6,15 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (ConfigEntry, ConfigFlow,
+                                          ConfigFlowResult)
 from homeassistant.const import CONF_EMAIL, CONF_OFFSET, CONF_PASSWORD
 from homeassistant.helpers.selector import (DateSelector, DateSelectorConfig,
-                                          TextSelector, TextSelectorConfig,
-                                          TextSelectorType)
+                                            TextSelector, TextSelectorConfig,
+                                            TextSelectorType)
+from pycalista_ista import LoginError, PyCalistaIsta, ServerError
 
 from .const import DOMAIN
-from pycalista_ista import LoginError, PyCalistaIsta, ServerError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ REAUTH_SCHEMA = vol.Schema(
         ),
     }
 )
+
 
 class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for ista Calista."""
@@ -120,15 +122,16 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 return self.async_update_reload_and_abort(reauth_entry, data=user_input)
 
-
         return self.async_show_form(
             step_id="reauth_confirm",
             data_schema=self.add_suggested_values_to_schema(
                 data_schema=STEP_USER_DATA_SCHEMA,
                 suggested_values={
-                    CONF_EMAIL: user_input[CONF_EMAIL]
-                    if user_input is not None
-                    else reauth_entry.data[CONF_EMAIL]
+                    CONF_EMAIL: (
+                        user_input[CONF_EMAIL]
+                        if user_input is not None
+                        else reauth_entry.data[CONF_EMAIL]
+                    )
                 },
             ),
             description_placeholders={
