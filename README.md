@@ -3,6 +3,7 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
 This integration allows you to monitor your heating and water consumption data from the [ista Calista portal](https://oficina.ista.es/) within Home Assistant.
 
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=herruzo99&repository=ista-calista)
 ## Features
 
 * Retrieves historical consumption data for:
