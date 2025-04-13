@@ -1,38 +1,57 @@
 {
     "config": {
         "abort": {
-            "already_configured": "El dispositivo ya está configurado",
-            "reauth_successful": "La reautenticación se realizó correctamente"
+            "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+            "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
         },
         "error": {
-            "cannot_connect": "Error al conectar",
-            "invalid_auth": "Autenticación no válida",
-            "unknown": "Error inesperado"
+            "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+            "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+            "unknown": "[%key:common::config_flow::error::unknown%]",
+            "offset_too_recent": "La Fecha de Inicio de Consumo debe ser al menos un mes en el pasado.",
+            "invalid_date_format": "Formato de fecha inválido."
         },
         "step": {
-            "reauth_confirm": {
-                "data": {
-                    "email": "Correo electrónico",
-                    "password": "Contraseña"
-                },
-                "data_description": {
-                    "email": "Introduce la dirección de correo electrónico asociada a tu cuenta de ista Calista",
-                    "password": "Introduce la contraseña de tu cuenta de ista Calista"
-                },
-                "description": "Vuelve a introducir tu contraseña para `{email}` para reconectar tu cuenta de ista Calista a Home Assistant.",
-                "title": "Autenticación expirada para {name}"
-            },
             "user": {
+                "title": "Conectar a ista Calista",
                 "data": {
-                    "email": "Correo electrónico",
-                    "password": "Contraseña"
+                    "email": "[%key:common::config_flow::data::email%]",
+                    "password": "[%key:common::config_flow::data::password%]",
+                    "consumption_offset_date": "Fecha de Inicio de Consumo"
                 },
                 "data_description": {
-                    "email": "Introduce la dirección de correo electrónico asociada a tu cuenta de ista Calista",
-                    "password": "Introduce la contraseña de tu cuenta de ista Calista"
+                    "email": "Introduce la dirección de correo electrónico asociada a tu cuenta de ista Calista.",
+                    "password": "Introduce la contraseña de tu cuenta de ista Calista.",
+                    "consumption_offset_date": "Selecciona la fecha desde la cual comenzar a importar datos históricos de consumo (debe ser al menos 1 mes atrás)."
                 },
-                "description": "Conecta tu cuenta de **ista Calista** a Home Assistant para acceder a tus datos mensuales de consumo de calefacción y agua."
+                "description": "Conecta tu cuenta de **ista Calista** a Home Assistant para acceder a tus datos de consumo de calefacción y agua."
+            },
+            "reauth_confirm": {
+                "title": "[%key:common::config_flow::title::reauth%]",
+                "data": {
+                    "password": "[%key:common::config_flow::data::password%]"
+                },
+                "description": "La autenticación para {email} ha expirado. Por favor, vuelve a introducir tu contraseña para reconectar tu cuenta de ista Calista.",
+                "data_description": {
+                  "password": "Introduce la contraseña actual de tu cuenta de ista Calista asociada a {email}."
+                }
             }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Opciones de ista Calista",
+                "data": {
+                    "update_interval": "Intervalo de Actualización (horas)"
+                },
+                "data_description": {
+                    "update_interval": "Frecuencia (en horas) con la que comprobar nuevos datos de consumo del portal ista Calista."
+                }
+            }
+        },
+        "error": {
+            "interval_too_short": "El intervalo de actualización debe ser de al menos 1 hora."
         }
     },
     "entity": {
@@ -40,41 +59,26 @@
             "heating": {
                 "name": "Calefacción"
             },
-            "heating_cost": {
-                "name": "Coste de calefacción"
-            },
-            "heating_energy": {
-                "name": "Energía de calefacción"
-            },
             "hot_water": {
-                "name": "Agua caliente"
-            },
-            "hot_water_cost": {
-                "name": "Coste de agua caliente"
-            },
-            "hot_water_energy": {
-                "name": "Energía de agua caliente"
+                "name": "Agua Caliente"
             },
             "water": {
                 "name": "Agua"
             },
-            "water_cost": {
-                "name": "Coste de agua"
-            },
             "last_date": {
-                "name": "Última fecha de medición"
+                "name": "Última Fecha Medida"
             }
         }
     },
-    "device": {
-        "unknown": "Desconocido"
-    },
     "exceptions": {
         "authentication_exception": {
-            "message": "Error de autenticación para {email}, verifica tus credenciales"
+            "message": "Error de autenticación para {email}. Por favor, verifica tus credenciales e intenta autenticarte de nuevo."
         },
         "connection_exception": {
-            "message": "No se puede conectar y obtener datos de ista Calista, inténtalo más tarde"
+            "message": "No se puede conectar al servicio ista Calista. Por favor, comprueba tu conexión de red e inténtalo más tarde."
         }
+    },
+    "device": {
+        "unknown": "Dispositivo Desconocido"
     }
-} 
+}

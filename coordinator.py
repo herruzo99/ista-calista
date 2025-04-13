@@ -2,190 +2,146 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime, timedelta
 import logging
 from typing import Any, TypedDict
 
-from pycalista_ista import Device, LoginError, PyCalistaIsta, ServerError
+from pycalista_ista import (
+    Device,
+    IstaApiError,
+    IstaConnectionError,
+    IstaLoginError,
+    IstaParserError,
+    PyCalistaIsta,
+)
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL, CONF_OFFSET
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util # Use dt_util
 
-from .const import DOMAIN
+# Import constants including the new ones
+from .const import DOMAIN, CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_HOURS
 
 _LOGGER = logging.getLogger(__name__)
-_LOGGER.setLevel("DEBUG")
 
 type IstaConfigEntry = ConfigEntry[IstaCoordinator]
 
 
-class IstaDeviceData(TypedDict):
-    """Ista device data."""
-
+class IstaDeviceData(TypedDict, total=False): # Use total=False if keys might be missing initially
+    """TypedDict for Ista device data stored in the coordinator."""
     devices: dict[str, Device]
-    last_update: date
+    last_update_fetch_time: datetime # Timestamp of when the fetch completed
 
 
 class IstaCoordinator(DataUpdateCoordinator[IstaDeviceData]):
-    """Ista Calista data update coordinator."""
+    """Ista Calista data update coordinator using async library."""
 
     config_entry: IstaConfigEntry
 
     def __init__(
-        self, hass: HomeAssistant, config_entry: IstaConfigEntry, ista: PyCalistaIsta
+        self,
+        hass: HomeAssistant,
+        config_entry: IstaConfigEntry,
+        ista: PyCalistaIsta,
     ) -> None:
         """Initialize ista Calista data update coordinator."""
-        self.coordinator_id = f"coordinator_{config_entry.entry_id[:8]}"
-        _LOGGER.debug(
-            "[%s] Initializing Ista coordinator with config entry ID: %s",
-            self.coordinator_id,
-            config_entry.entry_id,
-        )
+        self.ista = ista
+        self.coordinator_id = f"ista_coord_{config_entry.entry_id[:8]}"
+        self._log_prefix = f"[{self.coordinator_id}] "
 
+
+    
         super().__init__(
             hass,
             _LOGGER,
             config_entry=config_entry,
-            name=DOMAIN,
-            update_interval=timedelta(days=1),
+            name=f"{DOMAIN} ({config_entry.title})",
+            update_interval=timedelta(hours=DEFAULT_UPDATE_INTERVAL_HOURS), # Use interval from options
+        )
+        _LOGGER.debug(
+            "%s Initializing coordinator with update interval: %s",
+            self._log_prefix,
+            self.update_interval,
         )
 
-        self.ista = ista
-        self.details: IstaDeviceData = {}
-        _LOGGER.debug(
-            "[%s] Coordinator initialized with update interval: %s",
-            self.coordinator_id,
-            timedelta(days=1),
-        )
+
+    @property
+    def is_ready(self) -> bool:
+        """Return True if the coordinator has successfully fetched data at least once."""
+        return self.last_update_success and bool(self.data.get("devices"))
+
 
     async def _async_update_data(self) -> IstaDeviceData:
-        """Fetch ista Calista data.
+        """Fetch latest ista Calista data asynchronously."""
+        _LOGGER.debug("%s Starting data update cycle", self._log_prefix)
 
-        Returns:
-            A dictionary containing device data and last update timestamp.
-
-        Raises:
-            ConfigEntryAuthFailed: If authentication fails.
-            UpdateFailed: If server is unreachable or returns invalid data.
-        """
-        _LOGGER.debug("[%s] Starting data update", self.coordinator_id)
+        configured_init_date_str = self.config_entry.data.get(CONF_OFFSET)
+        if not configured_init_date_str:
+             _LOGGER.error("%s Missing configuration offset date.", self._log_prefix)
+             raise UpdateFailed("Configuration offset date is missing.")
 
         try:
-            _LOGGER.debug("[%s] Attempting login to Ista Calista", self.coordinator_id)
-            await self.hass.async_add_executor_job(self.ista.login)
-            _LOGGER.debug("[%s] Login successful", self.coordinator_id)
+            configured_init_date = date.fromisoformat(configured_init_date_str)
+        except ValueError:
+            _LOGGER.error("%s Invalid configuration offset date format: %s", self._log_prefix, configured_init_date_str)
+            raise UpdateFailed("Invalid configuration offset date format.")
 
-            if not self.details:
-                _LOGGER.debug(
-                    "[%s] No existing details, fetching full history",
-                    self.coordinator_id,
-                )
-                self.details = await self.async_get_details(init=True)
-            else:
-                _LOGGER.debug("[%s] Updating existing details", self.coordinator_id)
-                self.details = await self.async_get_details()
+        today = dt_util.now().date() # Use timezone aware now().date()
+        if not self.last_update_success or not self.data or not self.data.get("devices"):
+            fetch_start_date = configured_init_date
+            fetch_end_date = today
+            _LOGGER.info("%s Performing initial/recovery data fetch from %s to %s",
+                         self._log_prefix, fetch_start_date, fetch_end_date)
+        else:
+            last_update_fetch_time = self.data.get('last_update_fetch_time', configured_init_date)
 
-            device_count = (
-                len(self.details["devices"]) if self.details.get("devices") else 0
+            fetch_start_date = today - timedelta(days=30)
+            fetch_start_date = max(fetch_start_date, last_update_fetch_time)
+            fetch_end_date = today
+            _LOGGER.debug("%s Performing incremental data fetch from %s to %s",
+                          self._log_prefix, fetch_start_date, fetch_end_date)
+
+        try:
+            devices_history = await self.ista.get_devices_history(
+                start=fetch_start_date,
+                end=fetch_end_date,
             )
-            _LOGGER.debug(
-                "[%s] Retrieved %d devices", self.coordinator_id, device_count
-            )
 
-            if not self.details["devices"]:
-                _LOGGER.error(
-                    "[%s] No devices found in Ista Calista account", self.coordinator_id
-                )
-                raise UpdateFailed("No devices found in ista Calista account")
+            device_count = len(devices_history)
+            _LOGGER.debug("%s Retrieved history for %d devices", self._log_prefix, device_count)
+
+            if not devices_history and not self.data.get("devices"):
+                 _LOGGER.error("%s No devices found in Ista Calista account during initial fetch.", self._log_prefix)
+                 raise UpdateFailed("No devices found in Ista Calista account.")
+
+            new_data: IstaDeviceData = {
+                "devices": devices_history,
+                "last_update_fetch_time": dt_util.now(), # Use timezone aware now()
+            }
 
             _LOGGER.info(
-                "[%s] Successfully updated data with %d devices, last update: %s",
-                self.coordinator_id,
+                "%s Successfully updated data with %d devices. Last fetch: %s",
+                self._log_prefix,
                 device_count,
-                self.details["last_update"],
+                new_data["last_update_fetch_time"].isoformat(),
             )
 
-            return self.details
+            return new_data
 
-        except ServerError as err:
-            _LOGGER.error(
-                "[%s] Server error while connecting to Ista Calista: %s",
-                self.coordinator_id,
-                str(err),
-            )
-            raise UpdateFailed(
-                "Unable to connect and retrieve data from ista Calista, try again later"
-            ) from err
-
-        except LoginError as err:
-            _LOGGER.error(
-                "[%s] Authentication failed for account %s: %s",
-                self.coordinator_id,
-                self.config_entry.data[CONF_EMAIL],
-                str(err),
-            )
+        except IstaLoginError as err:
+            _LOGGER.error("%s Authentication failed: %s", self._log_prefix, err)
             raise ConfigEntryAuthFailed(
                 translation_domain=DOMAIN,
                 translation_key="authentication_exception",
-                translation_placeholders={
-                    CONF_EMAIL: self.config_entry.data[CONF_EMAIL]
-                },
+                translation_placeholders={CONF_EMAIL: self.config_entry.data[CONF_EMAIL]},
             ) from err
-
+        except (IstaConnectionError, IstaParserError, IstaApiError, ValueError) as err:
+            _LOGGER.error("%s Error communicating with Ista Calista API: %s", self._log_prefix, err)
+            raise UpdateFailed(f"Error communicating with Ista Calista API: {err}") from err
         except Exception as err:
-            _LOGGER.exception(
-                "[%s] Unexpected error occurred while updating Ista Calista data: %s",
-                self.coordinator_id,
-                str(err),
-            )
-            raise UpdateFailed(f"Unexpected error: {err}") from err
-
-    async def async_get_details(self, init: bool = False) -> IstaDeviceData:
-        """Retrieve details of consumption units."""
-        configured_init_date = datetime.strptime(
-            self.config_entry.data[CONF_OFFSET], "%Y-%m-%d"
-        ).date()
-
-        if init:
-            _LOGGER.debug(
-                "[%s] Fetching full device history since %s",
-                self.coordinator_id,
-                configured_init_date,
-            )
-            result = await self.hass.async_add_executor_job(
-                self.ista.get_devices_history, configured_init_date
-            )
-        else:
-            fetch_date = max(configured_init_date, date.today() - timedelta(days=30))
-            _LOGGER.debug(
-                "[%s] Fetching incremental device history since %s",
-                self.coordinator_id,
-                fetch_date,
-            )
-            result = await self.hass.async_add_executor_job(
-                self.ista.get_devices_history, fetch_date
-            )
-
-        # Log details about each device retrieved
-        for serial, device in result.items():
-            _LOGGER.debug(
-                "[%s] Retrieved device - Serial: %s, Type: %s, Location: %s, Readings: %d",
-                self.coordinator_id,
-                serial,
-                type(device).__name__,
-                device.location,
-                len(device.history) if device.history else 0,
-            )
-
-        current_time = datetime.now()
-        _LOGGER.debug(
-            "[%s] Completed fetching details at %s with %d devices",
-            self.coordinator_id,
-            current_time,
-            len(result),
-        )
-
-        return {"devices": result, "last_update": current_time}
+            _LOGGER.exception("%s Unexpected error occurred during data update", self._log_prefix)
+            raise UpdateFailed(f"Unexpected error during data update: {err}") from err

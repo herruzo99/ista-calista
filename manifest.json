@@ -9,7 +9,7 @@
   "issue_tracker": "https://github.com/herruzo99/ista-calista/issues",
   "dependencies": [],
   "config_flow": true,
-  "requirements": ["pycalista-ista~=0.3.2"],
+  "requirements": ["pycalista-ista~=0.4.3"],
   "iot_class": "cloud_polling",
   "loggers": ["pycalista_ista", "ista_calista"],
   "diagnostics": true,
