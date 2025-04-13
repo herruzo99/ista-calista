@@ -77,8 +77,5 @@
       "connection_exception": {
           "message": "Unable to connect to the ista Calista service. Please check your network connection and try again later."
       }
-  },
-  "device": {
-      "unknown": "Unknown Device"
   }
 }

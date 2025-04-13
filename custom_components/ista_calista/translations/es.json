@@ -77,8 +77,5 @@
         "connection_exception": {
             "message": "No se puede conectar al servicio ista Calista. Por favor, comprueba tu conexión de red e inténtalo más tarde."
         }
-    },
-    "device": {
-        "unknown": "Dispositivo Desconocido"
     }
 }

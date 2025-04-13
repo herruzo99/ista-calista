@@ -12,6 +12,5 @@
   "requirements": ["pycalista-ista~=0.4.3"],
   "iot_class": "cloud_polling",
   "loggers": ["pycalista_ista", "ista_calista"],
-  "diagnostics": true,
   "quality_scale": "gold"
 }
