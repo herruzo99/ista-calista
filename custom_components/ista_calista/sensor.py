@@ -108,8 +108,8 @@ SENSOR_DESCRIPTIONS: Final[tuple[CalistaSensorEntityDescription, ...]] = (
     CalistaSensorEntityDescription(
         key=IstaSensorEntity.HEATING,
         translation_key=IstaSensorEntity.HEATING,
-        native_unit_of_measurement=None,
-        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfVolume.CUBIC_METERS,
+        device_class=SensorDeviceClass.GAS,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=2,
         value_fn=lambda device: device.last_reading.reading if device.last_reading else None,

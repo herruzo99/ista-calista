@@ -12,5 +12,5 @@
   "loggers": ["pycalista_ista", "ista_calista"],
   "quality_scale": "gold",
   "requirements": ["pycalista-ista~=0.4.7"],
-  "version": "0.1.4"
+  "version": "0.1.5"
 }
