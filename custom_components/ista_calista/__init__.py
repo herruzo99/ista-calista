@@ -13,7 +13,7 @@ from pycalista_ista import (
     IstaLoginError,
     PyCalistaIsta,
 )
-
+import homeassistant.helpers.config_validation as cv
 from homeassistant.components.recorder import get_instance
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
@@ -32,6 +32,8 @@ from .coordinator import IstaCoordinator
 type IstaConfigEntry = ConfigEntry[IstaCoordinator]
 
 _LOGGER = logging.getLogger(__name__)
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:

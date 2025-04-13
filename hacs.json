@@ -1,5 +1,7 @@
 {
     "name": "Ista Calista",
-    "country": ["ES"]
+    "homeassistant": "2023.1.0",
+    "country": ["ES"],
+    "render_readme": true
   }
   
