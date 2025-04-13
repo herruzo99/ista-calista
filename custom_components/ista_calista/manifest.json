@@ -11,6 +11,6 @@
   "issue_tracker": "https://github.com/herruzo99/ista-calista/issues",
   "loggers": ["pycalista_ista", "ista_calista"],
   "quality_scale": "gold",
-  "requirements": ["pycalista-ista~=0.4.5"],
-  "version": "0.1.0"
+  "requirements": ["pycalista-ista~=0.4.7"],
+  "version": "0.1.4"
 }
