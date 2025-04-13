@@ -3,20 +3,54 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from datetime import date, timedelta
+from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import (ConfigEntry, ConfigFlow,
-                                          ConfigFlowResult)
-from homeassistant.const import CONF_EMAIL, CONF_OFFSET, CONF_PASSWORD
-from homeassistant.helpers.selector import (DateSelector, DateSelectorConfig,
-                                            TextSelector, TextSelectorConfig,
-                                            TextSelectorType)
-from pycalista_ista import LoginError, PyCalistaIsta, ServerError
+from dateutil.relativedelta import relativedelta
+from pycalista_ista import (
+    IstaApiError,
+    IstaConnectionError,
+    IstaLoginError,
+    PyCalistaIsta,
+)
 
-from .const import DOMAIN
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
+from homeassistant.const import CONF_EMAIL, CONF_OFFSET, CONF_PASSWORD
+from homeassistant.core import callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import (
+    DateSelector,
+    DateSelectorConfig,
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
+from homeassistant.util import dt as dt_util
+
+from .const import CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_HOURS, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+# --- Helper Functions ---
+
+def get_default_offset_date() -> str:
+    """Return the default offset date (1 year ago)."""
+    return (dt_util.now().date() - relativedelta(years=1)).isoformat()
+
+def get_min_offset_date() -> date:
+    """Return the minimum allowed offset date (1 month ago)."""
+    return dt_util.now().date() - relativedelta(months=1)
+
+# --- Schemas ---
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
@@ -47,12 +81,54 @@ REAUTH_SCHEMA = vol.Schema(
     }
 )
 
+# --- Config Flow ---
 
 class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for ista Calista."""
 
     VERSION = 1
-    entry: ConfigEntry | None = None
+
+    async def _validate_user_input(self, user_input: dict[str, Any]) -> dict[str, str]:
+        """Validate user input common to user and reauth steps."""
+        errors: dict[str, str] = {}
+        email = user_input[CONF_EMAIL]
+        password = user_input[CONF_PASSWORD]
+
+        if CONF_OFFSET in user_input:
+            try:
+                selected_offset_date = date.fromisoformat(user_input[CONF_OFFSET])
+                min_allowed_date = get_min_offset_date()
+                if selected_offset_date > min_allowed_date:
+                     _LOGGER.warning(
+                         "Validation failed: Offset date %s is too recent (must be before %s)",
+                         selected_offset_date, min_allowed_date
+                     )
+                     # Use the key defined in strings.json
+                     errors[CONF_OFFSET] = "offset_too_recent"
+            except ValueError:
+                errors[CONF_OFFSET] = "invalid_date_format" # Use key from strings.json
+
+        if errors:
+             return errors
+
+        session = async_get_clientsession(self.hass)
+        ista = PyCalistaIsta(email, password, session)
+        try:
+            _LOGGER.info("Attempting API login validation for %s", email)
+            await ista.login()
+            _LOGGER.info("API login validation successful for %s", email)
+        except IstaLoginError:
+            _LOGGER.warning("Invalid authentication for %s during validation", email)
+            errors["base"] = "invalid_auth" # Use key from strings.json
+        except (IstaConnectionError, IstaApiError) as err:
+            _LOGGER.error("Connection/API error during validation for %s: %s", email, err)
+            errors["base"] = "cannot_connect" # Use key from strings.json
+        except Exception:
+            _LOGGER.exception("Unexpected exception during validation for %s", email)
+            errors["base"] = "unknown" # Use key from strings.json
+
+        return errors
+
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -61,81 +137,84 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            try:
-                ista = PyCalistaIsta(
-                    user_input[CONF_EMAIL],
-                    user_input[CONF_PASSWORD],
-                )
-                await self.hass.async_add_executor_job(ista.login)
-                ista.import_datetime_start = user_input[CONF_OFFSET]
-                info = ista.get_account()
-            except ServerError:
-                errors["base"] = "cannot_connect"
-            except LoginError:
-                errors["base"] = "invalid_auth"
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception")
-                errors["base"] = "unknown"
-            else:
-                if TYPE_CHECKING:
-                    assert info
-                await self.async_set_unique_id(info)
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title=info or "ista Calista",
-                    data=user_input,
-                )
+            errors = await self._validate_user_input(user_input)
 
-        return self.async_show_form(
-            step_id="user",
-            data_schema=self.add_suggested_values_to_schema(
-                STEP_USER_DATA_SCHEMA, user_input
-            ),
-            errors=errors,
+            if not errors:
+                email = user_input[CONF_EMAIL]
+                await self.async_set_unique_id(email.lower())
+                self._abort_if_unique_id_configured(updates=user_input)
+
+                config_data = {
+                    CONF_EMAIL: email,
+                    CONF_PASSWORD: user_input[CONF_PASSWORD],
+                    CONF_OFFSET: user_input[CONF_OFFSET],
+                }
+
+                _LOGGER.info("Creating new config entry for %s", email)
+                return self.async_create_entry(title=email, data=config_data)
+
+        suggested_values = user_input or {}
+        if CONF_OFFSET not in suggested_values:
+             suggested_values[CONF_OFFSET] = get_default_offset_date()
+
+        data_schema = self.add_suggested_values_to_schema(
+            STEP_USER_DATA_SCHEMA, suggested_values=suggested_values
         )
 
-    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
-        """Handle reauth when credentials become invalid."""
+        # Pass the errors dictionary here. HA should look up the keys.
+        return self.async_show_form(
+            step_id="user",
+            data_schema=data_schema,
+            errors=errors,
+            description_placeholders=None,
+        )
+
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
+    ) -> ConfigFlowResult:
+        """Handle initiation of re-authentication."""
+        _LOGGER.debug("Starting reauth flow for %s", entry_data.get(CONF_EMAIL))
+        self.context["entry_data"] = entry_data
+        self.context["title_placeholder"] = entry_data.get(CONF_EMAIL)
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle reauth confirmation."""
+        """Handle re-authentication confirmation (password step)."""
         errors: dict[str, str] = {}
+        original_entry_data = self.context.get("entry_data", {})
+        email = original_entry_data.get(CONF_EMAIL)
 
-        reauth_entry = self._get_reauth_entry()
-        if user_input is not None and self.entry:
-            try:
-                ista = PyCalistaIsta(
-                    user_input[CONF_EMAIL],
-                    user_input[CONF_PASSWORD],
-                )
-                await self.hass.async_add_executor_job(ista.login)
-            except ServerError:
-                errors["base"] = "cannot_connect"
-            except LoginError:
-                errors["base"] = "invalid_auth"
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception")
-                errors["base"] = "unknown"
-            else:
-                return self.async_update_reload_and_abort(reauth_entry, data=user_input)
+        if not email:
+             _LOGGER.error("Reauth flow missing email in context.")
+             return self.async_abort(reason="unknown")
 
+        if user_input is not None:
+            validation_input = {
+                 CONF_EMAIL: email,
+                 CONF_PASSWORD: user_input[CONF_PASSWORD],
+            }
+            errors = await self._validate_user_input(validation_input)
+
+            if not errors:
+                existing_entry = await self.async_set_unique_id(email.lower())
+                if existing_entry:
+                    updated_data = {**existing_entry.data, CONF_PASSWORD: user_input[CONF_PASSWORD]}
+                    self.hass.config_entries.async_update_entry(
+                        existing_entry, data=updated_data
+                    )
+                    await self.hass.config_entries.async_reload(existing_entry.entry_id)
+                    _LOGGER.info("Re-authentication successful and entry updated for %s", email)
+                    return self.async_abort(reason="reauth_successful")
+                else:
+                     _LOGGER.error("Could not find existing entry during reauth for %s", email)
+                     errors["base"] = "unknown"
+
+        # Pass the errors dictionary here. HA should look up the keys.
         return self.async_show_form(
             step_id="reauth_confirm",
-            data_schema=self.add_suggested_values_to_schema(
-                data_schema=STEP_USER_DATA_SCHEMA,
-                suggested_values={
-                    CONF_EMAIL: (
-                        user_input[CONF_EMAIL]
-                        if user_input is not None
-                        else reauth_entry.data[CONF_EMAIL]
-                    )
-                },
-            ),
-            description_placeholders={
-                CONF_EMAIL: reauth_entry.data[CONF_EMAIL],
-            },
+            data_schema=REAUTH_SCHEMA,
             errors=errors,
+            description_placeholders={CONF_EMAIL: email},
         )
