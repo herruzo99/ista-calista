@@ -29,7 +29,7 @@ from .const import DOMAIN, PLATFORMS, CONF_OFFSET
 from .coordinator import IstaCoordinator
 
 # Define the type alias for the config entry specific to this integration
-IstaConfigEntry = ConfigEntry[IstaCoordinator]
+type IstaConfigEntry = ConfigEntry[IstaCoordinator]
 
 _LOGGER = logging.getLogger(__name__)
 
