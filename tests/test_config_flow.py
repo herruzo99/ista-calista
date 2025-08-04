@@ -1,9 +1,11 @@
 """Tests for the config flow of ista_calista."""
 
+from unittest.mock import patch
+
 from homeassistant.config_entries import SOURCE_REAUTH, SOURCE_USER
 from homeassistant.const import CONF_PASSWORD
 from homeassistant.data_entry_flow import FlowResultType
-from pycalista_ista import IstaConnectionError, IstaLoginError
+from pycalista_ista import IstaApiError, IstaConnectionError, IstaLoginError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ista_calista.config_flow import get_default_offset_date
@@ -89,6 +91,39 @@ async def test_user_flow_cannot_connect(
     assert result2["errors"] == {"base": "cannot_connect"}
 
 
+async def test_user_flow_api_error(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
+    """Test user flow handles generic API errors."""
+    mock_pycalista.login.side_effect = IstaApiError("API failure")
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input=MOCK_CONFIG,
+    )
+    await hass.async_block_till_done()
+    assert result2["type"] is FlowResultType.FORM
+    assert result2["errors"] == {"base": "cannot_connect"}
+
+
+async def test_user_flow_unknown_exception(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
+    """Test user flow handles an unknown exception during validation."""
+    mock_pycalista.login.side_effect = Exception("Something broke")
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"], user_input=MOCK_CONFIG
+    )
+
+    assert result2["type"] is FlowResultType.FORM
+    assert result2["errors"]["base"] == "unknown"
+
+
 async def test_user_flow_offset_errors(
     recorder_mock, hass, enable_custom_integrations, mock_pycalista
 ):
@@ -108,9 +143,6 @@ async def test_user_flow_offset_errors(
     )
     assert result2["type"] is FlowResultType.FORM
     assert result2["errors"] == {CONF_OFFSET: "offset_too_recent"}
-
-    # We no longer test for "invalid_date_format" here, as voluptuous
-    # handles this at a lower level. We only test our custom validation logic.
 
 
 async def test_flow_abort_duplicate(
@@ -184,3 +216,28 @@ async def test_reauth_flow_updates_entry(
         hass.config_entries.async_get_entry(entry.entry_id).data[CONF_PASSWORD]
         == "newpassword"
     )
+
+
+async def test_reauth_fails_and_shows_form_again(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
+    """Test that a failed reauthentication shows the form again with an error."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG["email"].lower()
+    )
+    entry.add_to_hass(hass)
+    mock_pycalista.login.side_effect = IstaLoginError("Reauth failed")
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_REAUTH, "entry_id": entry.entry_id},
+        data=entry.data,
+    )
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"], user_input={"password": "wrongpassword"}
+    )
+    await hass.async_block_till_done()
+
+    assert result2["type"] is FlowResultType.FORM
+    assert result2["step_id"] == "reauth_confirm"
+    assert result2["errors"] == {"base": "invalid_auth"}
