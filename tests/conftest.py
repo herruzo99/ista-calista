@@ -1,4 +1,5 @@
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 
@@ -13,12 +14,14 @@ def mock_pycalista():
     mock_instance.set_log_level = MagicMock()
     mock_class = MagicMock(return_value=mock_instance)
 
-    with patch(
-        "custom_components.ista_calista.PyCalistaIsta",
-        new=mock_class,
-    ), patch(
-        "custom_components.ista_calista.config_flow.PyCalistaIsta",
-        new=mock_class,
+    with (
+        patch(
+            "custom_components.ista_calista.PyCalistaIsta",
+            new=mock_class,
+        ),
+        patch(
+            "custom_components.ista_calista.config_flow.PyCalistaIsta",
+            new=mock_class,
+        ),
     ):
         yield mock_instance
-

@@ -1,8 +1,8 @@
 """Tests for the statistics import logic of the sensor platform."""
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
 
-from freezegun import freeze_time
+from datetime import datetime, timezone
+from unittest.mock import patch
+
 from homeassistant.components.recorder.statistics import StatisticData
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -12,11 +12,13 @@ from tests.const import MOCK_CONFIG, MOCK_DEVICES
 
 @patch("custom_components.ista_calista.sensor.async_add_external_statistics")
 async def test_statistics_import_initial(
-    mock_add_stats, recorder_mock,  hass, enable_custom_integrations, mock_pycalista
+    mock_add_stats, recorder_mock, hass, enable_custom_integrations, mock_pycalista
 ):
     """Test that initial statistics are imported for sensors."""
     mock_pycalista.get_devices_history.return_value = MOCK_DEVICES
-    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG["email"])
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG["email"]
+    )
     entry.add_to_hass(hass)
 
     await hass.config_entries.async_setup(entry.entry_id)
@@ -40,10 +42,12 @@ async def test_statistics_import_initial(
 
 @patch("custom_components.ista_calista.sensor.async_add_external_statistics")
 async def test_statistics_import_incremental(
-    mock_add_stats, recorder_mock,  hass, enable_custom_integrations, mock_pycalista
+    mock_add_stats, recorder_mock, hass, enable_custom_integrations, mock_pycalista
 ):
     """Test that incremental statistics are correctly imported."""
-    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG["email"])
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG["email"]
+    )
     entry.add_to_hass(hass)
 
     # Simulate existing statistics in the database
@@ -53,7 +57,9 @@ async def test_statistics_import_incremental(
             {
                 "end": last_stat_time.timestamp(),
                 "start": last_stat_time.timestamp(),
-                "last_reset": datetime(2024, 1, 1, 0, 0, tzinfo=timezone.utc).timestamp(),
+                "last_reset": datetime(
+                    2024, 1, 1, 0, 0, tzinfo=timezone.utc
+                ).timestamp(),
                 "state": 1050.5,
                 "sum": 50.5,
             }
@@ -82,7 +88,7 @@ async def test_statistics_import_incremental(
 
 @patch("custom_components.ista_calista.sensor.async_add_external_statistics")
 async def test_statistics_meter_reset(
-    mock_add_stats, recorder_mock,  hass, enable_custom_integrations, mock_pycalista
+    mock_add_stats, recorder_mock, hass, enable_custom_integrations, mock_pycalista
 ):
     """Test statistics import handles a meter reset correctly."""
     reset_device = MOCK_DEVICES["heating-123"].__class__(
@@ -98,7 +104,9 @@ async def test_statistics_meter_reset(
     ]
     mock_pycalista.get_devices_history.return_value = {"heating-123": reset_device}
 
-    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG["email"])
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG["email"]
+    )
     entry.add_to_hass(hass)
 
     await hass.config_entries.async_setup(entry.entry_id)

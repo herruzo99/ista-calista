@@ -8,9 +8,12 @@ from typing import Any
 
 import voluptuous as vol
 from dateutil.relativedelta import relativedelta
-from pycalista_ista import IstaApiError, IstaConnectionError, IstaLoginError, PyCalistaIsta
-
-from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -28,6 +31,12 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 from homeassistant.util import dt as dt_util
+from pycalista_ista import (
+    IstaApiError,
+    IstaConnectionError,
+    IstaLoginError,
+    PyCalistaIsta,
+)
 
 # This is the correct source for our integration's specific constants.
 from .const import (
@@ -64,9 +73,7 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
         """Get the options flow for this handler."""
         return IstaOptionsFlowHandler()
 
-    async def _validate_user_input(
-        self, user_input: dict[str, Any]
-    ) -> dict[str, str]:
+    async def _validate_user_input(self, user_input: dict[str, Any]) -> dict[str, str]:
         """Validate user input for credentials and settings."""
         errors: dict[str, str] = {}
         email = user_input[CONF_EMAIL]
@@ -99,7 +106,9 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             await ista.login()
             _LOGGER.debug("Ista API login validation successful for %s.", email)
         except IstaLoginError:
-            _LOGGER.warning("Authentication failed during validation for user %s.", email)
+            _LOGGER.warning(
+                "Authentication failed during validation for user %s.", email
+            )
             errors["base"] = "invalid_auth"
         except (IstaConnectionError, IstaApiError) as e:
             _LOGGER.error("API connection failed during validation: %s", e)
@@ -126,7 +135,9 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             errors = await self._validate_user_input(user_input)
             if not errors:
                 email = user_input[CONF_EMAIL]
-                _LOGGER.info("Validation successful. Creating config entry for %s", email)
+                _LOGGER.info(
+                    "Validation successful. Creating config entry for %s", email
+                )
                 await self.async_set_unique_id(email.lower())
                 self._abort_if_unique_id_configured()
 
@@ -163,9 +174,7 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_reauth(
-        self, entry_data: dict[str, Any]
-    ) -> ConfigFlowResult:
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         """Handle initiation of re-authentication."""
         _LOGGER.debug(
             "Handling 'reauth' step for entry: %s", entry_data.get(CONF_EMAIL)
@@ -200,9 +209,7 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
                     self.hass.config_entries.async_update_entry(
                         existing_entry, data={**entry_data, CONF_PASSWORD: password}
                     )
-                    await self.hass.config_entries.async_reload(
-                        existing_entry.entry_id
-                    )
+                    await self.hass.config_entries.async_reload(existing_entry.entry_id)
                     return self.async_abort(reason="reauth_successful")
 
         return self.async_show_form(

@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-import logging
 from typing import TYPE_CHECKING, Final
-
-from pycalista_ista import ColdWaterDevice, Device, HeatingDevice, HotWaterDevice
 
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
@@ -29,11 +27,13 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
+from pycalista_ista import ColdWaterDevice, Device, HeatingDevice, HotWaterDevice
 
 from .const import DOMAIN, MANUFACTURER
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
+
     from .coordinator import IstaCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,6 +44,7 @@ PARALLEL_UPDATES = 0
 @dataclass(frozen=True, kw_only=True)
 class CalistaSensorEntityDescription(SensorEntityDescription):
     """Describes an Ista Calista sensor entity."""
+
     exists_fn: Callable[[Device], bool] = lambda _: True
     value_fn: Callable[[Device], StateType]
     generate_lts: bool = False
@@ -57,7 +58,9 @@ SENSOR_DESCRIPTIONS: Final[tuple[CalistaSensorEntityDescription, ...]] = (
         device_class=SensorDeviceClass.WATER,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=2,
-        value_fn=lambda device: device.last_reading.reading if device.last_reading else None,
+        value_fn=lambda device: (
+            device.last_reading.reading if device.last_reading else None
+        ),
         exists_fn=lambda device: isinstance(device, ColdWaterDevice),
         generate_lts=True,
     ),
@@ -68,7 +71,9 @@ SENSOR_DESCRIPTIONS: Final[tuple[CalistaSensorEntityDescription, ...]] = (
         device_class=SensorDeviceClass.WATER,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=2,
-        value_fn=lambda device: device.last_reading.reading if device.last_reading else None,
+        value_fn=lambda device: (
+            device.last_reading.reading if device.last_reading else None
+        ),
         exists_fn=lambda device: isinstance(device, HotWaterDevice),
         generate_lts=True,
     ),
@@ -79,7 +84,9 @@ SENSOR_DESCRIPTIONS: Final[tuple[CalistaSensorEntityDescription, ...]] = (
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=2,
-        value_fn=lambda device: device.last_reading.reading if device.last_reading else None,
+        value_fn=lambda device: (
+            device.last_reading.reading if device.last_reading else None
+        ),
         exists_fn=lambda device: isinstance(device, HeatingDevice),
         generate_lts=True,
     ),
@@ -87,7 +94,9 @@ SENSOR_DESCRIPTIONS: Final[tuple[CalistaSensorEntityDescription, ...]] = (
         key="last_reading_date",
         translation_key="last_date",
         device_class=SensorDeviceClass.TIMESTAMP,
-        value_fn=lambda device: device.last_reading.date if device.last_reading else None,
+        value_fn=lambda device: (
+            device.last_reading.date if device.last_reading else None
+        ),
         exists_fn=lambda device: bool(device.last_reading),
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
@@ -102,9 +111,7 @@ async def async_setup_entry(
     """Set up Ista Calista sensors based on a config entry."""
     coordinator: IstaCoordinator = config_entry.runtime_data
     hass.data.setdefault(DOMAIN, {}).setdefault("entities", set())
-    _LOGGER.debug(
-        "Setting up sensor platform for entry: %s", config_entry.entry_id
-    )
+    _LOGGER.debug("Setting up sensor platform for entry: %s", config_entry.entry_id)
 
     @callback
     def _add_entities_callback() -> None:
@@ -140,9 +147,7 @@ async def async_setup_entry(
             _LOGGER.debug("No new entities to add.")
 
     config_entry.async_on_unload(coordinator.async_add_listener(_add_entities_callback))
-    _LOGGER.debug(
-        "Initial entity check for entry %s.", config_entry.entry_id
-    )
+    _LOGGER.debug("Initial entity check for entry %s.", config_entry.entry_id)
     _add_entities_callback()
 
 
@@ -263,7 +268,6 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
             )
             return
 
-
         statistic_id = f"{DOMAIN}:{self.unique_id.replace('-', '_')}"
         _LOGGER.debug("Starting statistics import for statistic_id: %s", statistic_id)
 
@@ -327,11 +331,18 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
                 )
 
             device_name = self._get_device_name(device)
-            sensor_name = (self.entity_description.translation_key or self.entity_description.key).replace("_", " ").title()
+            sensor_name = (
+                (self.entity_description.translation_key or self.entity_description.key)
+                .replace("_", " ")
+                .title()
+            )
 
             metadata = StatisticMetaData(
-                has_mean=False, has_sum=True, name=f"{device_name} {sensor_name}",
-                source=DOMAIN, statistic_id=statistic_id,
+                has_mean=False,
+                has_sum=True,
+                name=f"{device_name} {sensor_name}",
+                source=DOMAIN,
+                statistic_id=statistic_id,
                 unit_of_measurement=self.entity_description.native_unit_of_measurement,
             )
 
@@ -365,12 +376,14 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
                     continue
 
                 current_state = reading.reading
-                
+
                 # If this is the very first import for this sensor, the first reading's
                 # sum is 0, as it represents the starting point, not an increase.
                 if is_first_import:
                     increase = 0.0
-                    is_first_import = False # Subsequent readings in this batch will be cumulative.
+                    is_first_import = (
+                        False  # Subsequent readings in this batch will be cumulative.
+                    )
                 else:
                     increase = current_state - last_state
 
@@ -407,7 +420,5 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
                     len(statistics_to_import),
                     statistic_id,
                 )
-                async_add_external_statistics(
-                    self.hass, metadata, statistics_to_import
-                )
+                async_add_external_statistics(self.hass, metadata, statistics_to_import)
             _LOGGER.debug("Releasing statistics import lock for %s", statistic_id)

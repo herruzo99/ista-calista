@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
-
-from pycalista_ista import IstaApiError, IstaConnectionError, IstaLoginError, PyCalistaIsta
 
 from homeassistant.components.recorder import get_instance
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
+from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.typing import ConfigType
+from pycalista_ista import (
+    IstaApiError,
+    IstaConnectionError,
+    IstaLoginError,
+    PyCalistaIsta,
+)
 
 from .const import (
     CONF_LOG_LEVEL,
@@ -48,9 +51,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: IstaConfigEntry) -> bool
     """Set up ista Calista from a config entry."""
     _LOGGER.debug("Setting up config entry: %s", entry.entry_id)
     session = async_get_clientsession(hass)
-    ista = PyCalistaIsta(
-        entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD], session
-    )
+    ista = PyCalistaIsta(entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD], session)
 
     # Set log level for the library and the integration based on user options
     log_level_str = entry.options.get(CONF_LOG_LEVEL, DEFAULT_LOG_LEVEL).upper()
@@ -76,7 +77,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: IstaConfigEntry) -> bool
         _LOGGER.error("Failed to set log level: %s", err)
 
     try:
-        _LOGGER.debug("Attempting to log in to Ista Calista API for account: %s", entry.data[CONF_EMAIL])
+        _LOGGER.debug(
+            "Attempting to log in to Ista Calista API for account: %s",
+            entry.data[CONF_EMAIL],
+        )
         await ista.login()
         _LOGGER.info("Successfully logged in for account %s", entry.data[CONF_EMAIL])
     except IstaLoginError as err:
@@ -88,7 +92,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: IstaConfigEntry) -> bool
         ) from err
     except (IstaConnectionError, IstaApiError) as err:
         _LOGGER.error("Failed to connect to Ista Calista API: %s", err)
-        raise ConfigEntryNotReady(f"Failed to connect to Ista Calista API: {err}") from err
+        raise ConfigEntryNotReady(
+            f"Failed to connect to Ista Calista API: {err}"
+        ) from err
     except Exception as err:
         _LOGGER.exception("Unexpected error during ista Calista setup")
         raise ConfigEntryNotReady(f"Unexpected error during setup: {err}") from err
@@ -173,7 +179,6 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 device.id,
             )
             continue
-
 
         # We replace them with underscores to match the sensor's statistic_id generation.
         slug_serial_number = serial_number.replace("-", "_")
