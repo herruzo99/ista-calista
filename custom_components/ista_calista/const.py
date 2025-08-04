@@ -13,12 +13,18 @@ PLATFORMS: Final[list[Platform]] = [Platform.SENSOR]
 
 # --- Configuration Constants ---
 # CONF_EMAIL and CONF_PASSWORD are imported from homeassistant.const
-CONF_OFFSET: Final[str] = "consumption_offset_date" # Renamed for clarity
-CONF_UPDATE_INTERVAL: Final[str] = "update_interval" # New constant for options flow
+CONF_OFFSET: Final[str] = "consumption_offset_date"  # Renamed for clarity
+CONF_UPDATE_INTERVAL: Final[str] = "update_interval"  # New constant for options flow
+CONF_LOG_LEVEL: Final[str] = "log_level"  # New constant for log level
 
 # --- Defaults ---
-DEFAULT_UPDATE_INTERVAL_HOURS: Final[int] = 24 # Default update interval
+DEFAULT_UPDATE_INTERVAL_HOURS: Final[int] = 24  # Default update interval
+DEFAULT_LOG_LEVEL: Final[str] = "INFO"  # Default log level
 
 # --- Other Constants ---
-# Add any other integration-specific constants here
-
+LOG_LEVELS: Final[list[str]] = [
+    "DEBUG",
+    "INFO",
+    "WARNING",
+    "ERROR",
+]  # Available log levels

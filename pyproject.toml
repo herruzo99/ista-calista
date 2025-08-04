@@ -1,0 +1,63 @@
+[tool.pytest.ini_options]
+# Specifies the directory where pytest will look for tests.
+testpaths = "tests"
+# Enables asynchronous test support, which is critical for Home Assistant.
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+# Add this to resolve ResourceWarning: unclosed transport
+# It's a known issue in pytest-homeassistant-custom-component
+filterwarnings = "ignore:unclosed transport"
+
+[tool.coverage.run]
+# Tells the coverage tool to analyze the 'ista_calista' custom component directory.
+source = [
+    "custom_components/ista_calista",
+]
+# Excludes files that contain no executable code.
+omit = [
+    "custom_components/ista_calista/translations/*",
+    "custom_components/ista_calista/icons.json",
+]
+
+[tool.coverage.report]
+# Fails the build if code coverage drops below 95%.
+fail_under = 90
+
+# This section is for documentation and IDE support. The Nix flake is the
+# single source of truth for the development environment's package set.
+[project]
+name = "ha-ista-calista"
+version = "0.1.5"
+description = "Ista Calista custom component for Home Assistant"
+requires-python = ">=3.10"
+dependencies = [
+    "pycalista-ista~=0.6.0"
+]
+
+[project.optional-dependencies]
+# Dependencies needed for running the test suite and linting.
+# These are provided by the devShell in flake.nix.
+test = [
+    "pytest",
+    "pytest-cov",
+    "pytest-homeassistant-custom-component",
+    "aioresponses", # Correct library for mocking aiohttp sessions
+    "freezegun",
+    "ruff",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py313']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+
+[dependency-groups]
+dev = [
+    "black>=25.1.0",
+    "isort>=6.0.1",
+    "pytest-asyncio>=0.26.0",
+]
