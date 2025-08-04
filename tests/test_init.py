@@ -1,7 +1,7 @@
 """Test the ista_calista integration setup and teardown."""
+
 from unittest.mock import patch
 
-import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import device_registry as dr
 from pycalista_ista import IstaConnectionError, IstaLoginError
@@ -12,7 +12,9 @@ from custom_components.ista_calista.const import DOMAIN
 from .const import MOCK_CONFIG, MOCK_DEVICES
 
 
-async def test_setup_entry_success(recorder_mock,  hass, enable_custom_integrations, mock_pycalista):
+async def test_setup_entry_success(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
     """Test successful setup of a config entry."""
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
     entry.add_to_hass(hass)
@@ -21,7 +23,10 @@ async def test_setup_entry_success(recorder_mock,  hass, enable_custom_integrati
     assert entry.state is ConfigEntryState.LOADED
     assert entry.entry_id in hass.data[DOMAIN]
 
-async def test_setup_entry_invalid_auth(recorder_mock,  hass, enable_custom_integrations, mock_pycalista):
+
+async def test_setup_entry_invalid_auth(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
     """Test setup of a config entry with invalid auth."""
     mock_pycalista.login.side_effect = IstaLoginError("Auth failed")
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
@@ -30,7 +35,10 @@ async def test_setup_entry_invalid_auth(recorder_mock,  hass, enable_custom_inte
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.SETUP_ERROR
 
-async def test_setup_entry_connection_error(recorder_mock,  hass, enable_custom_integrations, mock_pycalista):
+
+async def test_setup_entry_connection_error(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
     """Test setup of a config entry with connection issues."""
     mock_pycalista.login.side_effect = IstaConnectionError("Connection failed")
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
@@ -39,7 +47,10 @@ async def test_setup_entry_connection_error(recorder_mock,  hass, enable_custom_
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.SETUP_RETRY
 
-async def test_unload_entry(recorder_mock,  hass, enable_custom_integrations, mock_pycalista):
+
+async def test_unload_entry(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
     """Test unloading a config entry."""
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
     entry.add_to_hass(hass)
@@ -50,12 +61,15 @@ async def test_unload_entry(recorder_mock,  hass, enable_custom_integrations, mo
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.NOT_LOADED
 
+
 async def test_remove_entry_clears_stats(
-    recorder_mock,  hass, enable_custom_integrations, mock_pycalista
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
 ):
     """Test that removing the config entry clears associated statistics."""
     mock_pycalista.get_devices_history.return_value = MOCK_DEVICES
-    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG["email"])
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG["email"]
+    )
     entry.add_to_hass(hass)
 
     # Setup the component and entities
@@ -65,7 +79,7 @@ async def test_remove_entry_clears_stats(
     # Get the devices before they are removed. The device registry is cleared
     # before async_remove_entry is called.
     device_registry = dr.async_get(hass)
-    devices = dr.async_entries_for_config_entry(device_registry, entry.entry_id)
+    dr.async_entries_for_config_entry(device_registry, entry.entry_id)
 
     with patch(
         "custom_components.ista_calista.get_instance",
@@ -76,7 +90,7 @@ async def test_remove_entry_clears_stats(
 
         # Assert that the recorder's clear_statistics method was called
         mock_recorder_instance.async_clear_statistics.assert_called_once()
-        
+
         # Verify the statistic_ids passed are correct (slugified)
         called_ids = mock_recorder_instance.async_clear_statistics.call_args[0][0]
         expected_ids = [

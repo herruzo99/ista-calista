@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
-from homeassistant.components.diagnostics import async_redact_data
+from homeassistant.const import CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 
 from . import IstaConfigEntry
-from homeassistant.const import CONF_PASSWORD
-import logging 
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,21 +60,27 @@ async def async_get_config_entry_diagnostics(
         devices_summary = []
         for serial, device in coordinator.data["devices"].items():
             hashed_serial = str(hash(serial))[-8:]
-            devices_summary.append({
-                "serial_hash": hashed_serial,
-                "type": device.__class__.__name__,
-                "location": device.location,
-                "history_count": len(device.history),
-                "last_reading_date": (
-                    device.last_reading.date.isoformat() if device.last_reading else None
-                ),
-            })
+            devices_summary.append(
+                {
+                    "serial_hash": hashed_serial,
+                    "type": device.__class__.__name__,
+                    "location": device.location,
+                    "history_count": len(device.history),
+                    "last_reading_date": (
+                        device.last_reading.date.isoformat()
+                        if device.last_reading
+                        else None
+                    ),
+                }
+            )
         diag_data["api_data_summary"] = {
             "device_count": len(devices_summary),
             "devices": devices_summary,
         }
     else:
         _LOGGER.debug("No coordinator data available for diagnostics.")
-        diag_data["api_data_summary"] = {"message": "No data available from coordinator."}
+        diag_data["api_data_summary"] = {
+            "message": "No data available from coordinator."
+        }
 
     return diag_data

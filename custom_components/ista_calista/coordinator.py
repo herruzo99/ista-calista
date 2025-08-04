@@ -2,26 +2,36 @@
 
 from __future__ import annotations
 
-import asyncio
-from datetime import date, timedelta
 import logging
+from datetime import date, timedelta
 from typing import TypedDict
-
-from pycalista_ista import Device, IstaApiError, IstaConnectionError, IstaLoginError, PyCalistaIsta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
+from pycalista_ista import (
+    Device,
+    IstaApiError,
+    IstaConnectionError,
+    IstaLoginError,
+    PyCalistaIsta,
+)
 
-from .const import CONF_OFFSET, CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_HOURS, DOMAIN
+from .const import (
+    CONF_OFFSET,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL_HOURS,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class IstaDeviceData(TypedDict):
     """TypedDict for Ista device data stored in the coordinator."""
+
     devices: dict[str, Device]
 
 
@@ -115,15 +125,17 @@ class IstaCoordinator(DataUpdateCoordinator[IstaDeviceData]):
                 if serial in current_devices:
                     # The device persists. Merge its history to preserve older data.
                     existing_device = current_devices[serial]
-                    
+
                     # Use a dictionary keyed by date to efficiently merge and deduplicate readings.
-                    history_by_date = {reading.date: reading for reading in existing_device.history}
+                    history_by_date = {
+                        reading.date: reading for reading in existing_device.history
+                    }
                     new_readings_count = 0
                     for new_reading in device_from_api.history:
                         if new_reading.date not in history_by_date:
                             new_readings_count += 1
                         history_by_date[new_reading.date] = new_reading
-                    
+
                     if new_readings_count > 0:
                         _LOGGER.debug(
                             "Found %d new reading(s) for device %s.",
@@ -133,7 +145,9 @@ class IstaCoordinator(DataUpdateCoordinator[IstaDeviceData]):
                         total_new_readings += new_readings_count
 
                     # Update the device object with the fully merged and sorted history.
-                    device_from_api.history = sorted(history_by_date.values(), key=lambda r: r.date)
+                    device_from_api.history = sorted(
+                        history_by_date.values(), key=lambda r: r.date
+                    )
                 else:
                     # This is a newly discovered device.
                     _LOGGER.info("Discovered new device during update: %s", serial)
@@ -143,7 +157,10 @@ class IstaCoordinator(DataUpdateCoordinator[IstaDeviceData]):
 
             removed_count = len(current_devices) - len(updated_devices)
             if removed_count > 0:
-                _LOGGER.info("Removed %d stale device(s) no longer present in the API.", removed_count)
+                _LOGGER.info(
+                    "Removed %d stale device(s) no longer present in the API.",
+                    removed_count,
+                )
 
             _LOGGER.info(
                 "Data update successful. Found %d new reading(s) across %d device(s).",

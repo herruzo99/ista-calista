@@ -1,16 +1,24 @@
 """Test the Ista Calista data update coordinator."""
-import copy
-import pytest
-from datetime import datetime, timedelta, timezone
-from pycalista_ista import IstaLoginError, IstaConnectionError, IstaApiError, Reading
 
+import copy
+from datetime import datetime, timedelta, timezone
+
+import pytest
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
+from pycalista_ista import IstaApiError, IstaConnectionError, IstaLoginError, Reading
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
 from custom_components.ista_calista.const import DOMAIN
+
 from .const import MOCK_CONFIG, MOCK_DEVICES
 
-async def test_initial_fetch(recorder_mock,  hass, enable_custom_integrations, mock_pycalista):
+
+async def test_initial_fetch(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
     """Test that initial fetch populates data correctly."""
     mock_pycalista.get_devices_history.return_value = MOCK_DEVICES
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
@@ -23,7 +31,10 @@ async def test_initial_fetch(recorder_mock,  hass, enable_custom_integrations, m
     # Check that devices from MOCK_DEVICES are present
     assert set(coordinator.data["devices"].keys()) == set(MOCK_DEVICES.keys())
 
-async def test_incremental_update_merging(recorder_mock,  hass, enable_custom_integrations, mock_pycalista):
+
+async def test_incremental_update_merging(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
     """Test incremental update merges new readings and drops removed devices."""
     initial_data = copy.deepcopy(MOCK_DEVICES)
     mock_pycalista.get_devices_history.return_value = initial_data
@@ -41,7 +52,9 @@ async def test_incremental_update_merging(recorder_mock,  hass, enable_custom_in
     updated_heating.history.append(new_reading)
     mock_pycalista.get_devices_history.return_value = {"heating-123": updated_heating}
     # Advance time to trigger update
-    future_time = dt_util.now() + timedelta(hours=coordinator.update_interval.total_seconds() / 3600 + 1)
+    future_time = dt_util.now() + timedelta(
+        hours=coordinator.update_interval.total_seconds() / 3600 + 1
+    )
     async_fire_time_changed(hass, future_time)
     await hass.async_block_till_done()
 
@@ -49,7 +62,10 @@ async def test_incremental_update_merging(recorder_mock,  hass, enable_custom_in
     coor_heating = coordinator.data["devices"]["heating-123"]
     assert any(r.reading == 1100.0 for r in coor_heating.history)
 
-async def test_device_removal(recorder_mock,  hass, enable_custom_integrations, mock_pycalista):
+
+async def test_device_removal(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
     """Test that devices no longer in the API response are removed from coordinator data."""
     mock_pycalista.get_devices_history.return_value = copy.deepcopy(MOCK_DEVICES)
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
@@ -61,9 +77,7 @@ async def test_device_removal(recorder_mock,  hass, enable_custom_integrations, 
     assert len(coordinator.data["devices"]) == 3
 
     # API update now only returns the heating device
-    updated_devices = {
-        "heating-123": MOCK_DEVICES["heating-123"]
-    }
+    updated_devices = {"heating-123": MOCK_DEVICES["heating-123"]}
     mock_pycalista.get_devices_history.return_value = updated_devices
     await coordinator.async_refresh()
     await hass.async_block_till_done()
@@ -74,11 +88,14 @@ async def test_device_removal(recorder_mock,  hass, enable_custom_integrations, 
     assert "hot-water-456" not in coordinator.data["devices"]
     assert "cold-water-789" not in coordinator.data["devices"]
 
+
 @pytest.mark.parametrize(
     "error_cls",
     [IstaLoginError, IstaConnectionError, IstaApiError, Exception],
 )
-async def test_update_errors(recorder_mock,  hass, enable_custom_integrations, mock_pycalista, error_cls):
+async def test_update_errors(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista, error_cls
+):
     """Test that errors during update set last_update_success to False."""
     mock_pycalista.get_devices_history.return_value = MOCK_DEVICES
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
