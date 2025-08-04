@@ -14,7 +14,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.ista_calista.const import DOMAIN
 
-from .const import MOCK_CONFIG, MOCK_DEVICES, MOCK_DEVICE_NO_LOCATION
+from .const import MOCK_CONFIG, MOCK_DEVICE_NO_LOCATION, MOCK_DEVICES
 
 
 async def test_initial_fetch(
@@ -114,7 +114,6 @@ async def test_incremental_update_no_change(
     # Ensure the "Removed" log message is not present
     assert "Removed 0 stale device(s)" not in caplog.text
     assert "Removed" not in caplog.text
-
 
 
 async def test_device_removal(

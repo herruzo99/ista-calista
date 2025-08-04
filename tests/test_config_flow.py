@@ -1,6 +1,5 @@
 """Tests for the config flow of ista_calista."""
 
-from unittest.mock import patch
 
 from homeassistant.config_entries import SOURCE_REAUTH, SOURCE_USER
 from homeassistant.const import CONF_PASSWORD

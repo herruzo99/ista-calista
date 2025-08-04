@@ -7,7 +7,7 @@ from pytest_homeassistant_custom_component.components.diagnostics import (
 
 from custom_components.ista_calista.const import DOMAIN
 
-from .const import MOCK_CONFIG, MOCK_DEVICES, MOCK_DEVICE_NO_HISTORY
+from .const import MOCK_CONFIG, MOCK_DEVICE_NO_HISTORY, MOCK_DEVICES
 
 
 async def test_diagnostics(

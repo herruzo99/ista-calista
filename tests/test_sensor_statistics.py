@@ -1,21 +1,21 @@
 """Tests for the statistics import logic of the sensor platform."""
 
-import logging
 import copy
+import logging
 from datetime import datetime, timezone
 from unittest.mock import patch
 
 from homeassistant.components.recorder.statistics import StatisticData
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pycalista_ista import Reading
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ista_calista.const import DOMAIN
 from tests.const import (
     MOCK_CONFIG,
-    MOCK_DEVICES,
     MOCK_DEVICE_NO_HISTORY,
     MOCK_DEVICE_WITH_NONE_READING,
+    MOCK_DEVICES,
 )
 
 
@@ -97,7 +97,12 @@ async def test_statistics_import_incremental(
 
 @patch("custom_components.ista_calista.sensor.async_add_external_statistics")
 async def test_statistics_import_no_history(
-    mock_add_stats, caplog, recorder_mock, hass, enable_custom_integrations, mock_pycalista
+    mock_add_stats,
+    caplog,
+    recorder_mock,
+    hass,
+    enable_custom_integrations,
+    mock_pycalista,
 ):
     """Test that statistics import is skipped for a device with no history."""
     caplog.set_level(logging.DEBUG, logger="custom_components.ista_calista.sensor")
@@ -117,7 +122,12 @@ async def test_statistics_import_no_history(
 
 @patch("custom_components.ista_calista.sensor.async_add_external_statistics")
 async def test_statistics_import_no_new_readings(
-    mock_add_stats, caplog, recorder_mock, hass, enable_custom_integrations, mock_pycalista
+    mock_add_stats,
+    caplog,
+    recorder_mock,
+    hass,
+    enable_custom_integrations,
+    mock_pycalista,
 ):
     """Test statistics import when there are no new readings to add."""
     caplog.set_level(logging.DEBUG, logger="custom_components.ista_calista.sensor")
@@ -146,7 +156,12 @@ async def test_statistics_import_no_new_readings(
 
 @patch("custom_components.ista_calista.sensor.async_add_external_statistics")
 async def test_statistics_import_with_none_reading(
-    mock_add_stats, caplog, recorder_mock, hass, enable_custom_integrations, mock_pycalista
+    mock_add_stats,
+    caplog,
+    recorder_mock,
+    hass,
+    enable_custom_integrations,
+    mock_pycalista,
 ):
     """Test that statistics import skips over None readings."""
     caplog.set_level(logging.DEBUG, logger="custom_components.ista_calista.sensor")
@@ -209,10 +224,16 @@ async def test_statistics_meter_reset(
     assert round(stats_data[1]["sum"], 2) == 50.5
     assert stats_data[1]["state"] == 1050.5
     # Reading 3: Meter reset
-    assert round(stats_data[2]["sum"], 2) == 55.5  # 50.5 (previous sum) + 5.0 (new state)
+    assert (
+        round(stats_data[2]["sum"], 2) == 55.5
+    )  # 50.5 (previous sum) + 5.0 (new state)
     assert stats_data[2]["state"] == 5.0
-    assert stats_data[2]["last_reset"] == datetime(2024, 3, 1, 0, 0, tzinfo=timezone.utc)
+    assert stats_data[2]["last_reset"] == datetime(
+        2024, 3, 1, 0, 0, tzinfo=timezone.utc
+    )
     # Reading 4: Normal increase after reset
-    assert round(stats_data[3]["sum"], 2) == 65.5  # 55.5 (previous sum) + 10.0 (increase)
+    assert (
+        round(stats_data[3]["sum"], 2) == 65.5
+    )  # 55.5 (previous sum) + 10.0 (increase)
     assert stats_data[3]["state"] == 15.0
     assert stats_data[3]["last_reset"] == stats_data[2]["last_reset"]
