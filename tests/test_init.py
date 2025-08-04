@@ -75,7 +75,11 @@ async def test_setup_entry_generic_exception(
 
 
 async def test_setup_entry_invalid_log_level(
-    recorder_mock, caplog, hass: HomeAssistant, mock_pycalista, enable_custom_integrations
+    recorder_mock,
+    caplog,
+    hass: HomeAssistant,
+    mock_pycalista,
+    enable_custom_integrations,
 ):
     """Test setup with an invalid log level in options logs a warning."""
     entry = MockConfigEntry(
@@ -93,7 +97,11 @@ async def test_setup_entry_invalid_log_level(
 
 
 async def test_setup_entry_set_log_level_fails(
-    recorder_mock, caplog, hass: HomeAssistant, mock_pycalista, enable_custom_integrations
+    recorder_mock,
+    caplog,
+    hass: HomeAssistant,
+    mock_pycalista,
+    enable_custom_integrations,
 ):
     """Test that a failure to set the log level is caught and logged."""
     entry = MockConfigEntry(
@@ -173,12 +181,20 @@ async def test_remove_entry_no_devices(
     recorder_mock, hass, mock_pycalista, enable_custom_integrations
 ):
     """Test removing an entry that has no devices does not fail."""
-    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG[CONF_EMAIL])
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG[CONF_EMAIL]
+    )
     entry.add_to_hass(hass)
 
-    with patch("custom_components.ista_calista.dr.async_entries_for_config_entry", return_value=[]), patch(
-        "homeassistant.components.recorder.Recorder.async_clear_statistics"
-    ) as mock_clear_stats:
+    with (
+        patch(
+            "custom_components.ista_calista.dr.async_entries_for_config_entry",
+            return_value=[],
+        ),
+        patch(
+            "homeassistant.components.recorder.Recorder.async_clear_statistics"
+        ) as mock_clear_stats,
+    ):
         await hass.config_entries.async_remove(entry.entry_id)
         await hass.async_block_till_done()
         mock_clear_stats.assert_not_called()
@@ -188,7 +204,9 @@ async def test_remove_entry_device_mapping_fails(
     recorder_mock, caplog, hass, mock_pycalista, enable_custom_integrations
 ):
     """Test statistics removal handles devices with unmapped models or bad identifiers."""
-    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG[CONF_EMAIL])
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG[CONF_EMAIL]
+    )
     entry.add_to_hass(hass)
     device_registry = dr.async_get(hass)
 
@@ -226,7 +244,9 @@ async def test_remove_entry_no_recorder(
 ):
     """Test statistics removal when recorder integration is not available."""
     mock_pycalista.get_devices_history.return_value = MOCK_DEVICES
-    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG[CONF_EMAIL])
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG[CONF_EMAIL]
+    )
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -241,7 +261,9 @@ async def test_remove_entry_no_recorder(
     )
 
 
-async def test_remove_device_disallowed(hass: HomeAssistant, enable_custom_integrations):
+async def test_remove_device_disallowed(
+    hass: HomeAssistant, enable_custom_integrations
+):
     """Test that manually removing a device via the UI is disallowed."""
     from custom_components.ista_calista import async_remove_config_entry_device
 

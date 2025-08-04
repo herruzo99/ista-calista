@@ -1,19 +1,19 @@
 """Tests for the Ista Calista sensor platform."""
 
-import logging
 import copy
-from unittest.mock import patch
+import logging
 
 from homeassistant.const import STATE_UNAVAILABLE
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ista_calista.const import DOMAIN
 
 from .const import (
     MOCK_CONFIG,
-    MOCK_DEVICES,
     MOCK_DEVICE_NO_LOCATION,
+    MOCK_DEVICES,
     MOCK_GENERIC_DEVICE,
 )
 
@@ -99,9 +99,7 @@ async def test_sensor_device_generic_model(
     await hass.async_block_till_done()
 
     device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(
-        identifiers={(DOMAIN, "generic-dev-000")}
-    )
+    device = device_registry.async_get_device(identifiers={(DOMAIN, "generic-dev-000")})
     assert device is not None
     assert device.model == "Generic Meter"
 
