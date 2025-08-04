@@ -40,6 +40,7 @@ MODEL_TO_KEY_MAP = {
     "Heating Meter": "heating",
 }
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the ista Calista component."""

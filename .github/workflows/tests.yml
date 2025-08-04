@@ -27,11 +27,13 @@ jobs:
         # We add the --cov flag to enable coverage collection via pytest-cov
         # and specify an XML report, which is the standard format for Codecov.
         # The source for coverage is defined in pyproject.toml.
-        run: nix develop --command pytest --cov --cov-report=xml
+        run: nix develop --command pytest --cov --cov-branch --cov-report=xml
 
       - name: Upload coverage reports to Codecov
         # This action finds the coverage.xml file and uploads it.
         uses: codecov/codecov-action@v4
         with:
+          # The token is only required for private repositories but is good practice.
+          token: ${{ secrets.CODECOV_TOKEN }}
           # This ensures the CI step will fail if the upload process encounters an error.
           fail_ci_if_error: true
