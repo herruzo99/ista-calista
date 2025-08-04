@@ -1,93 +1,93 @@
 {
-  "config": {
-      "abort": {
-          "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
-          "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
-      },
-      "error": {
-          "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
-          "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
-          "unknown": "[%key:common::config_flow::error::unknown%]",
-          "offset_too_recent": "Consumption Start Date must be at least one month in the past.",
-          "invalid_date_format": "Invalid date format entered."
-      },
-      "step": {
-          "user": {
-              "title": "Connect to ista Calista",
-              "data": {
-                  "email": "[%key:common::config_flow::data::email%]",
-                  "password": "[%key:common::config_flow::data::password%]",
-                  "consumption_offset_date": "Consumption Start Date"
-              },
-              "data_description": {
-                  "email": "Enter the email address associated with your ista Calista account.",
-                  "password": "Enter the password for your ista Calista account.",
-                  "consumption_offset_date": "Select the date from which to start importing historical consumption data (must be at least 1 month ago)."
-              },
-              "description": "Connect your **ista Calista** account to Home Assistant to access your heating and water usage data."
-          },
-          "reauth_confirm": {
-              "title": "[%key:common::config_flow::title::reauth%]",
-              "data": {
-                  "password": "[%key:common::config_flow::data::password%]"
-              },
-              "description": "Authentication expired for {email}. Please re-enter your password to reconnect your ista Calista account.",
-              "data_description": {
-                "password": "Enter the current password for your ista Calista account associated with {email}."
-              }
-          }
-      }
-  },
-  "options": {
-      "step": {
-          "init": {
-              "title": "ista Calista Options",
-              "data": {
-                  "update_interval": "Update Interval (hours)",
-                  "log_level": "Log Level"
-              },
-              "data_description": {
-                  "update_interval": "Frequency (in hours) at which to check for new consumption data from the ista Calista portal.",
-                  "log_level": "Set the detail level for integration and library logs. 'Debug' is very verbose and should only be used for troubleshooting."
-              }
-          }
-      },
-      "error": {
-          "interval_too_short": "Update interval must be at least 1 hour."
-      },
-      "selector": {
-          "log_level": {
-              "options": {
-                  "DEBUG": "Debug",
-                  "INFO": "Info",
-                  "WARNING": "Warning",
-                  "ERROR": "Error"
-              }
-          }
-      }
-  },
-  "entity": {
-      "sensor": {
-          "heating": {
-              "name": "Heating"
-          },
-          "hot_water": {
-              "name": "Hot Water"
-          },
-          "water": {
-              "name": "Water"
-          },
-          "last_date": {
-              "name": "Last Measured Date"
-          }
-      }
-  },
-  "exceptions": {
-      "authentication_exception": {
-          "message": "Authentication failed for {email}. Please check your login credentials and re-authenticate."
-      },
-      "connection_exception": {
-          "message": "Unable to connect to the ista Calista service. Please check your network connection and try again later."
-      }
-  }
+    "config": {
+        "abort": {
+            "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+            "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+        },
+        "error": {
+            "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+            "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+            "unknown": "[%key:common::config_flow::error::unknown%]",
+            "offset_too_recent": "Consumption Start Date must be at least one month in the past.",
+            "invalid_date_format": "Invalid date format entered."
+        },
+        "step": {
+            "user": {
+                "title": "Connect to ista Calista",
+                "data": {
+                    "email": "[%key:common::config_flow::data::email%]",
+                    "password": "[%key:common::config_flow::data::password%]",
+                    "consumption_offset_date": "Consumption Start Date"
+                },
+                "data_description": {
+                    "email": "Enter the email address associated with your ista Calista account.",
+                    "password": "Enter the password for your ista Calista account.",
+                    "consumption_offset_date": "Select the date from which to start importing historical consumption data (must be at least 1 month ago)."
+                },
+                "description": "Connect your **ista Calista** account to Home Assistant to access your heating and water usage data."
+            },
+            "reauth_confirm": {
+                "title": "[%key:common::config_flow::title::reauth%]",
+                "data": {
+                    "password": "[%key:common::config_flow::data::password%]"
+                },
+                "description": "Authentication expired for {email}. Please re-enter your password to reconnect your ista Calista account.",
+                "data_description": {
+                    "password": "Enter the current password for your ista Calista account associated with {email}."
+                }
+            }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "ista Calista Options",
+                "data": {
+                    "update_interval": "Update Interval (hours)",
+                    "log_level": "Log Level"
+                },
+                "data_description": {
+                    "update_interval": "Frequency (in hours) at which to check for new consumption data from the ista Calista portal.",
+                    "log_level": "Set the detail level for integration and library logs. 'Debug' is very verbose and should only be used for troubleshooting."
+                }
+            }
+        },
+        "error": {
+            "interval_too_short": "Update interval must be at least 1 hour."
+        }
+    },
+    "selector": {
+        "log_level": {
+            "options": {
+                "DEBUG": "Debug",
+                "INFO": "Info",
+                "WARNING": "Warning",
+                "ERROR": "Error"
+            }
+        }
+    },
+    "entity": {
+        "sensor": {
+            "heating": {
+                "name": "Heating"
+            },
+            "hot_water": {
+                "name": "Hot Water"
+            },
+            "water": {
+                "name": "Water"
+            },
+            "last_date": {
+                "name": "Last Measured Date"
+            }
+        }
+    },
+    "exceptions": {
+        "authentication_exception": {
+            "message": "Authentication failed for {email}. Please check your login credentials and re-authenticate."
+        },
+        "connection_exception": {
+            "message": "Unable to connect to the ista Calista service. Please check your network connection and try again later."
+        }
+    }
 }
