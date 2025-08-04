@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: ha-ista-calista
+Version: 0.1.5
+Summary: Ista Calista custom component for Home Assistant
+Requires-Python: >=3.10
+License-File: LICENCE
+Requires-Dist: pycalista-ista~=0.6.0
+Provides-Extra: test
+Requires-Dist: pytest>=8.0.0; extra == "test"
+Requires-Dist: pytest-cov>=5.0.0; extra == "test"
+Requires-Dist: pytest-homeassistant-custom-component>=0.13.88; extra == "test"
+Requires-Dist: aiohttp>=3.9.5; extra == "test"
+Requires-Dist: pytest-aiohttp>=1.0.5; extra == "test"
+Requires-Dist: freezegun>=1.5.1; extra == "test"
+Requires-Dist: ruff; extra == "test"
+Requires-Dist: responses>=0.25.0; extra == "test"
+Dynamic: license-file

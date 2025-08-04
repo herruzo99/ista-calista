@@ -1,0 +1,39 @@
+name: Run Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v22
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Set up Cachix
+        uses: cachix/cachix-action@v12
+        with:
+          name: nix-community
+
+      - name: Run pytest and Generate Coverage Report
+        # We add the --cov flag to enable coverage collection via pytest-cov
+        # and specify an XML report, which is the standard format for Codecov.
+        # The source for coverage is defined in pyproject.toml.
+        run: nix develop --command pytest --cov --cov-report=xml
+
+      - name: Upload coverage reports to Codecov
+        # This action finds the coverage.xml file and uploads it.
+        uses: codecov/codecov-action@v4
+        with:
+          # The token is only required for private repositories but is good practice.
+          token: ${{ secrets.CODECOV_TOKEN }}
+          # This ensures the CI step will fail if the upload process encounters an error.
+          fail_ci_if_error: true

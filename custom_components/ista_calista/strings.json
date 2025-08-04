@@ -43,15 +43,27 @@
           "init": {
               "title": "ista Calista Options",
               "data": {
-                  "update_interval": "Update Interval (hours)"
+                  "update_interval": "Update Interval (hours)",
+                  "log_level": "Log Level"
               },
               "data_description": {
-                  "update_interval": "Frequency (in hours) at which to check for new consumption data from the ista Calista portal."
+                  "update_interval": "Frequency (in hours) at which to check for new consumption data from the ista Calista portal.",
+                  "log_level": "Set the detail level for integration and library logs. 'Debug' is very verbose and should only be used for troubleshooting."
               }
           }
       },
       "error": {
           "interval_too_short": "Update interval must be at least 1 hour."
+      },
+      "selector": {
+          "log_level": {
+              "options": {
+                  "DEBUG": "Debug",
+                  "INFO": "Info",
+                  "WARNING": "Warning",
+                  "ERROR": "Error"
+              }
+          }
       }
   },
   "entity": {

@@ -1,0 +1,11 @@
+pycalista-ista~=0.6.0
+
+[test]
+pytest>=8.0.0
+pytest-cov>=5.0.0
+pytest-homeassistant-custom-component>=0.13.88
+aiohttp>=3.9.5
+pytest-aiohttp>=1.0.5
+freezegun>=1.5.1
+ruff
+responses>=0.25.0

@@ -1,22 +1,49 @@
-name: Validate
+name: Validate and Lint
 
 on:
-  push: 
+  push:
+    branches:
+      - main
   pull_request:
   schedule:
     - cron: "0 0 * * *"
   workflow_dispatch:
 
 jobs:
-  validate-hass:
+  hassfest:
+    name: "Run hassfest"
     runs-on: "ubuntu-latest"
     steps:
-        - uses: "actions/checkout@v4"
-        - uses: "home-assistant/actions/hassfest@master"
-  validate-hacs:
+      - uses: "actions/checkout@v4"
+      - uses: "home-assistant/actions/hassfest@master"
+
+  hacs:
+    name: "HACS Validation"
     runs-on: "ubuntu-latest"
     steps:
-      - name: HACS validation
+      - name: "Checkout code"
+        uses: "actions/checkout@v4"
+      - name: "HACS validation"
         uses: "hacs/action@main"
         with:
           category: "integration"
+          # Specifies the root directory of the integration to validate.
+          # This is more explicit and reliable.
+          repository: "."
+
+  linter:
+    name: "Run Ruff Linter"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout code"
+        uses: actions/checkout@v4
+      - name: "Set up Python"
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: "Install Ruff"
+        run: pip install ruff
+      - name: "Run Ruff"
+        # The '--check' flag makes ruff exit with a non-zero status
+        # if it finds any issues, failing the workflow.
+        run: ruff check .

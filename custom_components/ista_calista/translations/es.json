@@ -1,13 +1,13 @@
 {
     "config": {
         "abort": {
-            "already_configured": "El dispositivo ya está configurado", 
-            "reauth_successful": "La reautenticación se realizó correctamente" 
+            "already_configured": "El dispositivo ya está configurado",
+            "reauth_successful": "La reautenticación se realizó correctamente"
         },
         "error": {
-            "cannot_connect": "Error al conectar", 
-            "invalid_auth": "Autenticación no válida", 
-            "unknown": "Error inesperado", 
+            "cannot_connect": "Error al conectar",
+            "invalid_auth": "Autenticación no válida",
+            "unknown": "Error inesperado",
             "offset_too_recent": "La Fecha de Inicio de Consumo debe ser al menos un mes en el pasado.",
             "invalid_date_format": "Formato de fecha inválido."
         },
@@ -15,8 +15,8 @@
             "user": {
                 "title": "Conectar a ista Calista",
                 "data": {
-                    "email": "Correo electrónico", 
-                    "password": "Contraseña", 
+                    "email": "Correo electrónico",
+                    "password": "Contraseña",
                     "consumption_offset_date": "Fecha de Inicio de Consumo"
                 },
                 "data_description": {
@@ -27,9 +27,9 @@
                 "description": "Conecta tu cuenta de **ista Calista** a Home Assistant para acceder a tus datos de consumo de calefacción y agua."
             },
             "reauth_confirm": {
-                "title": "Volver a autenticar la integración", 
+                "title": "Volver a autenticar la integración",
                 "data": {
-                    "password": "Contraseña" 
+                    "password": "Contraseña"
                 },
                 "description": "La autenticación para {email} ha expirado. Por favor, vuelve a introducir tu contraseña para reconectar tu cuenta de ista Calista.",
                 "data_description": {
@@ -43,15 +43,27 @@
             "init": {
                 "title": "Opciones de ista Calista",
                 "data": {
-                    "update_interval": "Intervalo de Actualización (horas)"
+                    "update_interval": "Intervalo de Actualización (horas)",
+                    "log_level": "Nivel de Registro"
                 },
                 "data_description": {
-                    "update_interval": "Frecuencia (en horas) con la que comprobar nuevos datos de consumo del portal ista Calista."
+                    "update_interval": "Frecuencia (en horas) con la que comprobar nuevos datos de consumo del portal ista Calista.",
+                    "log_level": "Establece el nivel de detalle para los registros de la integración y la librería. 'Debug' es muy detallado y solo debe usarse para solucionar problemas."
                 }
             }
         },
         "error": {
             "interval_too_short": "El intervalo de actualización debe ser de al menos 1 hora."
+        },
+        "selector": {
+            "log_level": {
+                "options": {
+                    "DEBUG": "Depuración (Debug)",
+                    "INFO": "Información (Info)",
+                    "WARNING": "Advertencia (Warning)",
+                    "ERROR": "Error"
+                }
+            }
         }
     },
     "entity": {
