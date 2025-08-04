@@ -54,10 +54,10 @@ SENSOR_DESCRIPTIONS: Final[tuple[CalistaSensorEntityDescription, ...]] = (
     CalistaSensorEntityDescription(
         key="water",
         translation_key="water",
-        native_unit_of_measurement=UnitOfVolume.LITERS,
+        native_unit_of_measurement=UnitOfVolume.CUBIC_METERS,
         device_class=SensorDeviceClass.WATER,
         state_class=SensorStateClass.TOTAL_INCREASING,
-        suggested_display_precision=2,
+        suggested_display_precision=3,
         value_fn=lambda device: (
             device.last_reading.reading if device.last_reading else None
         ),
@@ -67,10 +67,10 @@ SENSOR_DESCRIPTIONS: Final[tuple[CalistaSensorEntityDescription, ...]] = (
     CalistaSensorEntityDescription(
         key="hot_water",
         translation_key="hot_water",
-        native_unit_of_measurement=UnitOfVolume.LITERS,
+        native_unit_of_measurement=UnitOfVolume.CUBIC_METERS,
         device_class=SensorDeviceClass.WATER,
         state_class=SensorStateClass.TOTAL_INCREASING,
-        suggested_display_precision=2,
+        suggested_display_precision=3,
         value_fn=lambda device: (
             device.last_reading.reading if device.last_reading else None
         ),
