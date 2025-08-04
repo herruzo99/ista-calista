@@ -2,6 +2,7 @@
 
 import copy
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import pytest
 from homeassistant.util import dt as dt_util
@@ -13,7 +14,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.ista_calista.const import DOMAIN
 
-from .const import MOCK_CONFIG, MOCK_DEVICES
+from .const import MOCK_CONFIG, MOCK_DEVICES, MOCK_DEVICE_NO_LOCATION
 
 
 async def test_initial_fetch(
@@ -61,6 +62,59 @@ async def test_incremental_update_merging(
     # Check that new reading is merged into coordinator data
     coor_heating = coordinator.data["devices"]["heating-123"]
     assert any(r.reading == 1100.0 for r in coor_heating.history)
+
+
+async def test_incremental_update_adds_device(
+    recorder_mock, caplog, hass, enable_custom_integrations, mock_pycalista
+):
+    """Test that an incremental update discovers and adds a new device."""
+    # Initial setup with only the heating device
+    initial_devices = {"heating-123": MOCK_DEVICES["heating-123"]}
+    mock_pycalista.get_devices_history.return_value = copy.deepcopy(initial_devices)
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert len(coordinator.data["devices"]) == 1
+
+    # API update now returns the original device plus a new one
+    updated_devices = {**initial_devices, "heating-no-loc-123": MOCK_DEVICE_NO_LOCATION}
+    mock_pycalista.get_devices_history.return_value = updated_devices
+
+    with patch.object(coordinator, "async_update_listeners") as mock_update_listeners:
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        mock_update_listeners.assert_called()
+
+    # Verify the new device is now in the coordinator data
+    assert len(coordinator.data["devices"]) == 2
+    assert "heating-no-loc-123" in coordinator.data["devices"]
+    assert "Discovered new device during update: heating-no-loc-123" in caplog.text
+
+
+async def test_incremental_update_no_change(
+    recorder_mock, caplog, hass, enable_custom_integrations, mock_pycalista
+):
+    """Test incremental update where no devices are added or removed."""
+    mock_pycalista.get_devices_history.return_value = copy.deepcopy(MOCK_DEVICES)
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    # Subsequent API call returns the exact same data
+    mock_pycalista.get_devices_history.return_value = copy.deepcopy(MOCK_DEVICES)
+
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    # Ensure the "Removed" log message is not present
+    assert "Removed 0 stale device(s)" not in caplog.text
+    assert "Removed" not in caplog.text
+
 
 
 async def test_device_removal(
