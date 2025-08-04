@@ -54,16 +54,6 @@
         },
         "error": {
             "interval_too_short": "El intervalo de actualización debe ser de al menos 1 hora."
-        },
-        "selector": {
-            "log_level": {
-                "options": {
-                    "DEBUG": "Depuración (Debug)",
-                    "INFO": "Información (Info)",
-                    "WARNING": "Advertencia (Warning)",
-                    "ERROR": "Error"
-                }
-            }
         }
     },
     "entity": {

@@ -56,16 +56,6 @@
             "interval_too_short": "Update interval must be at least 1 hour."
         }
     },
-    "selector": {
-        "log_level": {
-            "options": {
-                "DEBUG": "Debug",
-                "INFO": "Info",
-                "WARNING": "Warning",
-                "ERROR": "Error"
-            }
-        }
-    },
     "entity": {
         "sensor": {
             "heating": {
