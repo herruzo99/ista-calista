@@ -33,7 +33,5 @@ jobs:
         # This action finds the coverage.xml file and uploads it.
         uses: codecov/codecov-action@v4
         with:
-          # The token is only required for private repositories but is good practice.
-          token: ${{ secrets.CODECOV_TOKEN }}
           # This ensures the CI step will fail if the upload process encounters an error.
           fail_ci_if_error: true
