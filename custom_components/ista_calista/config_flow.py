@@ -273,7 +273,6 @@ class IstaOptionsFlowHandler(OptionsFlow):
                     SelectSelectorConfig(
                         options=LOG_LEVELS,
                         mode=SelectSelectorMode.DROPDOWN,
-                        translation_key="log_level",
                     )
                 ),
             }

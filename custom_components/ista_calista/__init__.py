@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from homeassistant.helpers import config_validation as cv
 from homeassistant.components.recorder import get_instance
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
@@ -63,7 +64,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: IstaConfigEntry) -> bool
             DEFAULT_LOG_LEVEL,
         )
         log_level_str = DEFAULT_LOG_LEVEL
-
+    log_level_str = log_level_str.upper()
     try:
         # Set log level for the underlying library
         ista.set_log_level(log_level_str)
