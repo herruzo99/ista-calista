@@ -18,14 +18,14 @@
         # Python environment. This is the key to avoiding conflicts.
         pycalista-ista-for-ha = ha.python.pkgs.buildPythonPackage rec {
           pname = "pycalista-ista";
-          version = "0.6.0";
+          version = "0.7.0";
           format = "pyproject";
 
           src = pkgs.fetchFromGitHub {
             owner = "herruzo99";
             repo = "pycalista-ista";
             rev = "v${version}";
-            hash = "sha256-q9ACu3qQBQWIN1eHCdE+b7KuS5QiH1sULj2JQpS7VcY=";
+            hash = "sha256-R15btoGZaymU2PR1P9NxyXkpJXd3vy4RaSHTKGWLb+Y=";
           };
 
           # All dependencies are now drawn from `ha.python.pkgs`, ensuring consistency.

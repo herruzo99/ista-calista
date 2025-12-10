@@ -128,10 +128,12 @@ async def test_user_flow_offset_errors(
 ):
     """Test invalid offset date inputs produce appropriate errors."""
     # Offset too recent (today's date)
+    from homeassistant.util import dt as dt_util
+    
     too_recent = {
         "email": "user@example.com",
         "password": "pw",
-        "consumption_offset_date": "2025-08-01",
+        "consumption_offset_date": dt_util.now().date().isoformat(),
     }
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}

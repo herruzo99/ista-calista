@@ -27,11 +27,11 @@ fail_under = 90
 # single source of truth for the development environment's package set.
 [project]
 name = "ha-ista-calista"
-version = "0.6.1"
+version = "0.7.0"
 description = "Ista Calista custom component for Home Assistant"
 requires-python = ">=3.12"
 dependencies = [
-    "pycalista-ista~=0.6.0"
+    "pycalista-ista~=0.7.0"
 ]
 
 [project.optional-dependencies]
