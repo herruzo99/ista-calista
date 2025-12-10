@@ -1,16 +1,25 @@
 {
   "domain": "ista_calista",
   "name": "Ista Calista portal",
-  "after_dependencies": ["recorder"],
-  "codeowners": ["@herruzo99"],
+  "after_dependencies": [
+    "recorder"
+  ],
+  "codeowners": [
+    "@herruzo99"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/herruzo99/ista-calista",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/herruzo99/ista-calista/issues",
-  "loggers": ["pycalista_ista", "ista_calista"],
+  "loggers": [
+    "pycalista_ista",
+    "ista_calista"
+  ],
   "quality_scale": "gold",
-  "requirements": ["pycalista-ista~=0.6.0"],
-  "version": "0.6.1"
+  "requirements": [
+    "pycalista-ista~=0.7.0"
+  ],
+  "version": "0.7.0"
 }
