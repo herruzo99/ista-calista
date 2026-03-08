@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
+from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 from pycalista_ista import IstaApiError, IstaConnectionError, IstaLoginError, Reading
 from pytest_homeassistant_custom_component.common import (
@@ -197,3 +198,61 @@ async def test_billing_fetch_success(
     assert coordinator.last_update_success is True
     assert coordinator.data["billed_readings"] == MOCK_BILLED_READINGS
     assert coordinator.data["invoices"] == MOCK_INVOICES
+
+
+async def test_coordinator_merging_edge_cases(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, mock_pycalista
+):
+    """Test coordinator merging logic edge cases."""
+    from pycalista_ista import Invoice
+    from datetime import date as py_date
+
+    mock_pycalista.get_devices_history.return_value = MOCK_DEVICES
+    
+    # 1. Test case where invoice_number is None in both
+    xls_inv = Invoice(
+        invoice_number=None,
+        invoice_id=None,
+        invoice_date=py_date(2024, 1, 1),
+        device_type="heating",
+        amount=50.0,
+        period_start=py_date(2023, 1, 1),
+        period_end=py_date(2024, 1, 1)
+    )
+    list_inv = Invoice(
+        invoice_number=None,
+        invoice_id="ID_123",
+        invoice_date=py_date(2024, 1, 1),
+        device_type="heating",
+        amount=50.0,
+        period_start=None,
+        period_end=None
+    )
+    
+    mock_pycalista.get_invoice_xls.return_value = [xls_inv]
+    mock_pycalista.get_invoices.return_value = [list_inv]
+    
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data["invoices"][0].invoice_id == "ID_123"
+    
+    # 2. Test case where detailed list has invoice that doesn't match XLS
+    extra_inv = Invoice(
+        invoice_number="EXTRA",
+        invoice_id="ID_EXTRA",
+        invoice_date=py_date(2025, 1, 1),
+        device_type="water",
+        amount=10.0,
+        period_start=None,
+        period_end=None
+    )
+    mock_pycalista.get_invoices.return_value = [list_inv, extra_inv]
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    
+    assert len(coordinator.data["invoices"]) == 2
+    assert any(i.invoice_id == "ID_EXTRA" for i in coordinator.data["invoices"])

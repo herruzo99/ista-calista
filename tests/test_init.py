@@ -239,6 +239,33 @@ async def test_remove_entry_device_mapping_fails(
         mock_clear_stats.assert_not_called()
 
 
+async def test_remove_entry_device_no_model(
+    recorder_mock, caplog, hass, mock_pycalista, enable_custom_integrations
+):
+    """Test statistics removal handles devices with no model."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG[CONF_EMAIL]
+    )
+    entry.add_to_hass(hass)
+    device_registry = dr.async_get(hass)
+
+    # Create mock device with no model
+    device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "no-model-123")},
+        model=None,
+    )
+
+    with patch(
+        "homeassistant.components.recorder.Recorder.async_clear_statistics"
+    ) as mock_clear_stats:
+        await hass.config_entries.async_remove(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert "has no model set. Statistics for this device may not be cleared" in caplog.text
+        mock_clear_stats.assert_not_called()
+
+
 async def test_remove_entry_no_recorder(
     recorder_mock, caplog, hass, mock_pycalista, enable_custom_integrations
 ):
