@@ -10,6 +10,8 @@ def mock_pycalista():
     # Async methods of the library
     mock_instance.login = AsyncMock(return_value=True)
     mock_instance.get_devices_history = AsyncMock(return_value={})
+    mock_instance.get_billed_consumption = AsyncMock(return_value=[])
+    mock_instance.get_invoice_xls = AsyncMock(return_value=[])
     mock_instance.close = AsyncMock()
     mock_instance.set_log_level = MagicMock()
     mock_class = MagicMock(return_value=mock_instance)

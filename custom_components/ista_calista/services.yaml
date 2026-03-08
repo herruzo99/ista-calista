@@ -1,0 +1,15 @@
+download_invoice:
+  name: Download invoice
+  description: Downloads an invoice PDF using its specific ID.
+  fields:
+    invoice_id:
+      name: Invoice ID
+      description: The unique ID of the invoice (e.g., from a bill sensor's attributes).
+      example: "123456"
+      required: true
+      selector:
+        text:
+
+get_invoices:
+  name: Get invoices
+  description: Returns a detailed list of all invoices found in your account.

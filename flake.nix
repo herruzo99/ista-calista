@@ -14,8 +14,9 @@
         # Reference the home-assistant derivation from nixpkgs. This is our foundation.
         ha = pkgs.home-assistant;
 
-        # Define our custom component's dependency in the context of Home Assistant's
-        # Python environment. This is the key to avoiding conflicts.
+        # Build pycalista-ista from GitHub to provide all required dependencies.
+        # The shellHook below prepends the local sibling directory to PYTHONPATH so
+        # that the 0.8.0 development version takes precedence at runtime.
         pycalista-ista-for-ha = ha.python.pkgs.buildPythonPackage rec {
           pname = "pycalista-ista";
           version = "0.7.0";
@@ -55,6 +56,7 @@
           ruff
           isort
           black
+          mypy
 
           # Add our consistently-built package to the environment.
           pycalista-ista-for-ha
@@ -72,6 +74,13 @@
           ];
 
           shellHook = ''
+            # Override pycalista-ista with the local 0.8.0 development version.
+            # This sibling directory takes precedence over the nix-built 0.7.0.
+            PYCALISTA_LOCAL="$(readlink -f "$PWD/../pycalista-ista")"
+            if [ -d "$PYCALISTA_LOCAL" ]; then
+              export PYTHONPATH="$PYCALISTA_LOCAL:$PYTHONPATH"
+            fi
+
             # Add the project's custom_components directory to the PYTHONPATH.
             # This is crucial for pytest to discover the integration's code.
             export PYTHONPATH="$PWD/custom_components:$PYTHONPATH"

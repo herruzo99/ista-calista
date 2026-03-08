@@ -2,7 +2,8 @@
     "config": {
         "abort": {
             "already_configured": "El dispositivo ya está configurado",
-            "reauth_successful": "La reautenticación se realizó correctamente"
+            "reauth_successful": "La reautenticación se realizó correctamente",
+            "reconfigure_successful": "La reconfiguración se realizó con éxito"
         },
         "error": {
             "cannot_connect": "Error al conectar",
@@ -17,14 +18,34 @@
                 "data": {
                     "email": "Correo electrónico",
                     "password": "Contraseña",
-                    "consumption_offset_date": "Fecha de Inicio de Consumo"
+                    "consumption_offset_date": "Fecha de Inicio de Consumo",
+                    "season_start_month": "Mes de Inicio de la Temporada",
+                    "season_start_day": "Día de Inicio de la Temporada"
                 },
                 "data_description": {
                     "email": "Introduce la dirección de correo electrónico asociada a tu cuenta de ista Calista.",
                     "password": "Introduce la contraseña de tu cuenta de ista Calista.",
-                    "consumption_offset_date": "Selecciona la fecha desde la cual comenzar a importar datos históricos de consumo (debe ser al menos 1 mes atrás)."
+                    "consumption_offset_date": "Selecciona la fecha desde la cual comenzar a importar datos históricos de consumo (debe ser al menos 1 mes atrás).",
+                    "season_start": "Selecciona el día y mes en el que comienza una nueva temporada de consumo."
                 },
                 "description": "Conecta tu cuenta de **ista Calista** a Home Assistant para acceder a tus datos de consumo de calefacción y agua."
+            },
+            "reconfigure": {
+                "title": "Reconfigurar ista Calista",
+                "data": {
+                    "email": "Correo electrónico",
+                    "password": "Contraseña",
+                    "consumption_offset_date": "Fecha de Inicio de Consumo",
+                    "season_start_month": "Mes de Inicio de la Temporada",
+                    "season_start_day": "Día de Inicio de la Temporada"
+                },
+                "data_description": {
+                    "email": "Introduce la dirección de correo electrónico asociada a tu cuenta de ista Calista.",
+                    "password": "Introduce la contraseña de tu cuenta de ista Calista.",
+                    "consumption_offset_date": "Selecciona la fecha desde la cual comenzar a importar datos históricos de consumo (debe ser al menos 1 mes atrás).",
+                    "season_start": "Selecciona el día y mes en el que comienza una nueva temporada de consumo."
+                },
+                "description": "Actualiza la configuración de tu cuenta de ista Calista ({email})."
             },
             "reauth_confirm": {
                 "title": "Volver a autenticar la integración",
@@ -44,11 +65,13 @@
                 "title": "Opciones de ista Calista",
                 "data": {
                     "update_interval": "Intervalo de Actualización (horas)",
-                    "log_level": "Nivel de Registro"
+                    "log_level": "Nivel de Registro",
+                    "season_start": "Inicio Temporada Calefacción (Mes/Día)"
                 },
                 "data_description": {
                     "update_interval": "Frecuencia (en horas) con la que comprobar nuevos datos de consumo del portal ista Calista.",
-                    "log_level": "Establece el nivel de detalle para los registros de la integración y la librería. 'Debug' es muy detallado y solo debe usarse para solucionar problemas."
+                    "log_level": "Establece el nivel de detalle para los registros de la integración y la librería. 'Debug' es muy detallado y solo debe usarse para solucionar problemas.",
+                    "season_start": "Selecciona el día y mes en el que comienza una nueva temporada de consumo."
                 }
             }
         },
@@ -69,7 +92,61 @@
             },
             "last_date": {
                 "name": "Última Fecha Medida"
+            },
+            "billed_reading": {
+                "name": "Lectura Facturada"
+            },
+            "billed_reading_at_location": {
+                "name": "Lectura Facturada"
+            },
+            "last_billed_date": {
+                "name": "Fecha Lectura Facturada"
+            },
+            "last_billed_date_type": {
+                "name": "Fecha Lectura Facturada ({device_type})"
+            },
+            "last_billed_date_at_location": {
+                "name": "Fecha Lectura Facturada ({location})"
+            },
+            "latest_invoice_amount": {
+                "name": "Importe Última Factura"
+            },
+            "invoice_amount": {
+                "name": "Importe Factura {device_type}"
+            },
+            "average_daily_consumption": {
+                "name": "Consumo Diario Promedio"
+            },
+            "seasonal_consumption": {
+                "name": "Consumo Estacional"
+            },
+            "individual_bill": {
+                "name": "Factura {invoice_number} ({device_type})"
+            },
+            "bill_name": {
+                "name": "ID de última factura: {device_type}"
             }
+        },
+        "binary_sensor": {
+            "connection_status": {
+                "name": "Estado de Conexión"
+            }
+        }
+    },
+    "services": {
+        "download_invoice": {
+            "name": "Descargar factura",
+            "description": "Descarga un PDF de factura usando su ID específico.",
+            "fields": {
+                "invoice_id": {
+                    "name": "ID de factura",
+                    "description": "El ID único de la factura (ej., de los atributos de un sensor de factura)."
+                }
+            }
+        },
+        "get_invoices": {
+            "name": "Obtener facturas",
+            "description": "Devuelve una lista detallada de todas las facturas encontradas en tu cuenta."
         }
     },
     "exceptions": {

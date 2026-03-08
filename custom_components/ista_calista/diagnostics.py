@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+from datetime import datetime
 from typing import Any
 
 from homeassistant.const import CONF_PASSWORD
@@ -17,16 +19,16 @@ async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: IstaConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
-    _LOGGER.error("Generating diagnostics for config entry: %s", entry.entry_id)
+    _LOGGER.debug("Generating diagnostics for config entry: %s", entry.entry_id)
     coordinator = entry.runtime_data
 
-    redacted_data = {**entry.data}
+    redacted_data: dict[str, Any] = {**entry.data}
     redacted_data[CONF_PASSWORD] = "**REDACTED**"
 
     last_update_iso = None
     if coordinator.last_update_success and coordinator.data:
         # Find the most recent reading across all devices to serve as the last update time.
-        all_readings = [
+        all_readings: list[datetime] = [
             reading.date
             for device in coordinator.data.get("devices", {}).values()
             for reading in device.history
@@ -57,9 +59,9 @@ async def async_get_config_entry_diagnostics(
     }
 
     if coordinator.data and coordinator.data.get("devices"):
-        devices_summary = []
+        devices_summary: list[dict[str, Any]] = []
         for serial, device in coordinator.data["devices"].items():
-            hashed_serial = str(hash(serial))[-8:]
+            hashed_serial = hashlib.sha256(serial.encode()).hexdigest()[:8]
             devices_summary.append(
                 {
                     "serial_hash": hashed_serial,
