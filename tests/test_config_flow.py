@@ -8,7 +8,7 @@ from pycalista_ista import IstaApiError, IstaConnectionError, IstaLoginError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ista_calista.config_flow import get_default_offset_date
-from custom_components.ista_calista.const import CONF_OFFSET, DOMAIN
+from custom_components.ista_calista.const import CONF_OFFSET, CONF_SEASON_START, DOMAIN
 
 from .const import MOCK_CONFIG
 
@@ -134,6 +134,7 @@ async def test_user_flow_offset_errors(
         "email": "user@example.com",
         "password": "pw",
         "consumption_offset_date": dt_util.now().date().isoformat(),
+        CONF_SEASON_START: "2024-09-01",
     }
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
@@ -157,6 +158,7 @@ async def test_flow_abort_duplicate(
             "email": MOCK_CONFIG["email"],
             "password": "pw",
             "consumption_offset_date": "2024-01-01",
+            CONF_SEASON_START: "2024-09-01",
         },
         unique_id=MOCK_CONFIG["email"].lower(),
     )
@@ -249,7 +251,7 @@ async def test_reconfigure_flow_success(
         DOMAIN,
         context={"source": SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
     )
-    new_config = {**MOCK_CONFIG, "consumption_offset_date": "2023-01-01"}
+    new_config = {**MOCK_CONFIG, "consumption_offset_date": "2023-01-01", CONF_SEASON_START: "2024-09-01"}
     result2 = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         user_input=new_config,

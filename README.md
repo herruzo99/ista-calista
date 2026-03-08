@@ -20,12 +20,10 @@ This Home Assistant custom component integrates with the [ista Calista portal](h
   - Heating (kWh)
   - Hot Water (m³)
   - Cold Water (m³)
-- **Long-Term Statistics (LTS):** Imports your full available consumption history from the ista portal into Home Assistant, allowing you to track usage over time in the Energy Dashboard or with history graphs.
-- **Regular Updates:** Periodically fetches the latest readings to keep your sensors current.
+- **LTS & Billing History:** Imports your full available consumption history AND billing/invoice data into Home Assistant.
+- **Seasonal Analysis:** Tracks your consumption across different seasons (e.g., Heating Season).
+- **Invoice Management:** Provides sensors for your latest invoice details and a service to download PDF bills directly.
 - **Dynamic Entity Creation:** Automatically creates and adds sensors as they appear in your ista account.
-- **Configurable Options:** Adjust the update frequency and log level directly from the UI.
-- **Re-authentication Flow:** Notifies you and prompts for a new password if your credentials expire.
-- **Reconfiguration Flow:** Change your account email, password, or historical data start date at any time without removing the integration.
 
 ## Prerequisites
 
@@ -52,21 +50,31 @@ This Home Assistant custom component integrates with the [ista Calista portal](h
 1.  Navigate to **Settings** > **Devices & Services**.
 2.  Click **Add Integration** and search for **"Ista Calista"**.
 3.  Enter your ista Calista portal **email** and **password**.
-4.  **Consumption Start Date:** Select the date from which to import historical data. The portal typically provides data for the last 1-2 years. The default is one year ago.
-5.  Click **Submit**.
-
-The integration will perform an initial data sync, which may take several minutes depending on the amount of history available.
+4.  **Consumption Start Date:** Select the date from which to import historical data.
+5.  **Heating Season Start:** Select the day and month when your heating season typically begins (used for seasonal consumption calculation).
+6.  Click **Submit**.
 
 ## Provided Entities
 
-Each physical meter on your account creates a **device** in Home Assistant with the following entities:
+The integration creates a **device** for each physical meter, plus a global integration device for account-wide data.
 
+### Meter Entities
 | Entity | Unit | Description |
 |--------|------|-------------|
 | Heating | kWh | Current meter reading for heating consumption |
 | Hot Water | m³ | Current meter reading for hot water consumption |
 | Water | m³ | Current meter reading for cold water consumption |
-| Last Measured Date | — | Timestamp of the most recent reading (diagnostic, disabled by default) |
+| Average Daily Consumption | — | Calculated average based on historical data |
+| Seasonal Consumption | — | Consumption since the start of the current season |
+
+### Billing & Invoice Entities (Global)
+| Entity | Unit | Description |
+|--------|------|-------------|
+| Latest Invoice ID | — | The identification number of your most recent bill |
+| Latest Invoice Amount | € | The total amount of your latest invoice |
+| Billed Reading Date | — | The date of the last officially billed reading |
+| Billed Reading | — | The value of the last officially billed reading |
+| Individual Bill (Multiple) | — | Binary sensors for each recent invoice with details in attributes |
 
 All consumption sensors feed directly into Home Assistant's **Long-Term Statistics**, making them available in the **Energy Dashboard** and compatible with history graphs.
 

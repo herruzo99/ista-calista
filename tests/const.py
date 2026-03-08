@@ -11,13 +11,14 @@ from pycalista_ista import (
     Reading,
 )
 
-from custom_components.ista_calista.const import CONF_OFFSET
+from custom_components.ista_calista.const import CONF_OFFSET, CONF_SEASON_START
 
 # Mock user configuration (email, password, and offset date)
 MOCK_CONFIG = {
     CONF_EMAIL: "test@example.com",
     CONF_PASSWORD: "test-password",
     CONF_OFFSET: "2024-01-01",
+    CONF_SEASON_START: "2024-09-01",
 }
 
 # Mock device data from the pycalista_ista library
@@ -145,5 +146,6 @@ MOCK_INVOICES = [
         period_start=date(2024, 1, 1),
         period_end=date(2024, 3, 1),
         amount=45.50,
+        device_type="heating",
     ),
 ]

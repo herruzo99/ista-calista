@@ -155,7 +155,6 @@ ACCOUNT_SENSOR_DESCRIPTIONS: Final[tuple[CalistaAccountSensorEntityDescription, 
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data.get("invoices", [])[0].amount if data.get("invoices") else None,
-        entity_registry_enabled_default=False,
     ),
     CalistaAccountSensorEntityDescription(
         key="last_billed_date",
@@ -240,12 +239,15 @@ class IstaAverageDailySensor(CoordinatorEntity["IstaCoordinator"], SensorEntity)
         now = dt_util.now()
         thirty_days_ago = now - timedelta(days=30)
 
-        # Get readings within the last 30 days
-        recent_readings = [r for r in device.history if r.date >= thirty_days_ago]
+        # Get readings within the last 30 days, skipping None values
+        recent_readings = [r for r in device.history if r.date >= thirty_days_ago and r.reading is not None]
+
+        if not recent_readings or len(recent_readings) < 2:
+            # Fallback to last 2 valid readings if we don't have enough in 30 days
+            recent_readings = [r for r in device.history if r.reading is not None][-2:]
 
         if len(recent_readings) < 2:
-            # Fallback to last 2 readings if we don't have enough in 30 days
-            recent_readings = device.history[-2:]
+            return None
 
         first = recent_readings[0]
         last = recent_readings[-1]
@@ -314,9 +316,9 @@ class IstaSeasonalConsumptionSensor(CoordinatorEntity["IstaCoordinator"], Sensor
         start_year, _ = self._current_season
         start_date = date(start_year, self._start_month, self._start_day)
 
-        # Filter readings for the current season
+        # Filter readings for the current season, skipping None values
         season_readings = [
-            r for r in device.history if r.date.date() >= start_date
+            r for r in device.history if r.date.date() >= start_date and r.reading is not None
         ]
         if not season_readings:
             return None
@@ -518,7 +520,8 @@ async def async_setup_entry(
 
         # Bill Name Entities (to facilitate download action)
         for d_type in device_types:
-            unique_id = f"bill_name_{d_type.lower().replace(' ', '_')}"
+            inv_dev_type = (d_type or "unknown").lower().replace(" ", "_")
+            unique_id = f"bill_name_{inv_dev_type}"
             if unique_id not in invoice_tracked:
                 new_entities.append(IstaBillNameSensor(coordinator, config_entry, d_type))
                 invoice_tracked.add(unique_id)
@@ -527,7 +530,8 @@ async def async_setup_entry(
         for invoice in invoices:
             if not invoice.invoice_number:
                 continue
-            unique_id = f"bill_{invoice.invoice_number}_{invoice.device_type.lower().replace(' ', '_')}"
+            inv_dev_type = (invoice.device_type or "unknown").lower().replace(" ", "_")
+            unique_id = f"bill_{invoice.invoice_number}_{inv_dev_type}"
             if unique_id not in invoice_tracked:
                 new_entities.append(IstaBillSensor(coordinator, config_entry, invoice))
                 invoice_tracked.add(unique_id)
