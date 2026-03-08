@@ -42,11 +42,18 @@ from pycalista_ista import (
 from .const import (
     CONF_LOG_LEVEL,
     CONF_OFFSET,
+    CONF_SEASON_START,
+    CONF_SEASON_START_DAY,
+    CONF_SEASON_START_MONTH,
     CONF_UPDATE_INTERVAL,
     DEFAULT_LOG_LEVEL,
+    DEFAULT_SEASON_START_DAY,
+    DEFAULT_SEASON_START_MONTH,
     DEFAULT_UPDATE_INTERVAL_HOURS,
     DOMAIN,
     LOG_LEVELS,
+    MAX_UPDATE_INTERVAL_HOURS,
+    MIN_UPDATE_INTERVAL_HOURS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,12 +61,14 @@ _LOGGER = logging.getLogger(__name__)
 
 def get_default_offset_date() -> str:
     """Return the default offset date (1 year ago)."""
-    return (dt_util.now().date() - relativedelta(years=1)).isoformat()
+    result: date = dt_util.now().date() - relativedelta(years=1)
+    return result.isoformat()
 
 
 def get_min_offset_date() -> date:
     """Return the minimum allowed offset date (1 month ago)."""
-    return dt_util.now().date() - relativedelta(months=1)
+    result: date = dt_util.now().date() - relativedelta(months=1)
+    return result
 
 
 class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -163,6 +172,10 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
                         )
                     ),
                     vol.Required(CONF_OFFSET): DateSelector(DateSelectorConfig()),
+                    vol.Required(
+                        CONF_SEASON_START,
+                        default=f"{date.today().year}-{DEFAULT_SEASON_START_MONTH:02d}-{DEFAULT_SEASON_START_DAY:02d}",
+                    ): DateSelector(DateSelectorConfig()),
                 }
             ),
             suggested_values=suggested_values,
@@ -174,22 +187,92 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle reconfiguration (change email, password, or start date)."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        _LOGGER.debug(
+            "Handling 'reconfigure' step for entry: %s. User input provided: %s",
+            entry.entry_id,
+            user_input is not None,
+        )
+
+        if user_input is not None:
+            errors = await self._validate_user_input(user_input)
+            if not errors:
+                new_email = user_input[CONF_EMAIL]
+                _LOGGER.info(
+                    "Reconfiguration validated. Updating entry %s for account %s.",
+                    entry.entry_id,
+                    new_email,
+                )
+                # Only check for a conflicting entry when the email (unique_id) changes.
+                if new_email.lower() != entry.unique_id:
+                    await self.async_set_unique_id(new_email.lower())
+                    self._abort_if_unique_id_configured()
+                return self.async_update_reload_and_abort(
+                    entry,
+                    title=new_email,
+                    data_updates=user_input,
+                    reason="reconfigure_successful",
+                )
+
+        suggested_values = user_input or {
+            CONF_EMAIL: entry.data[CONF_EMAIL],
+            CONF_OFFSET: entry.data.get(CONF_OFFSET, get_default_offset_date()),
+            CONF_SEASON_START: entry.data.get(
+                CONF_SEASON_START,
+                f"{date.today().year}-{entry.data.get(CONF_SEASON_START_MONTH, DEFAULT_SEASON_START_MONTH):02d}-{entry.data.get(CONF_SEASON_START_DAY, DEFAULT_SEASON_START_DAY):02d}",
+            ),
+        }
+        _LOGGER.debug(
+            "Showing reconfigure form with suggested values: %s", suggested_values
+        )
+
+        schema = self.add_suggested_values_to_schema(
+            vol.Schema(
+                {
+                    vol.Required(CONF_EMAIL): TextSelector(
+                        TextSelectorConfig(
+                            type=TextSelectorType.EMAIL, autocomplete="email"
+                        )
+                    ),
+                    vol.Required(CONF_PASSWORD): TextSelector(
+                        TextSelectorConfig(
+                            type=TextSelectorType.PASSWORD,
+                            autocomplete="current-password",
+                        )
+                    ),
+                    vol.Required(CONF_OFFSET): DateSelector(DateSelectorConfig()),
+                    vol.Required(CONF_SEASON_START): DateSelector(DateSelectorConfig()),
+                }
+            ),
+            suggested_values=suggested_values,
+        )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={CONF_EMAIL: entry.data[CONF_EMAIL]},
+        )
+
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         """Handle initiation of re-authentication."""
         _LOGGER.debug(
             "Handling 'reauth' step for entry: %s", entry_data.get(CONF_EMAIL)
         )
-        self.context["entry_data"] = entry_data
-        self.context["title_placeholder"] = entry_data.get(CONF_EMAIL)
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle re-authentication confirmation (password step)."""
+        entry = self._get_reauth_entry()
+        email: str = entry.data[CONF_EMAIL]
         errors: dict[str, str] = {}
-        entry_data = self.context["entry_data"]
-        email = entry_data[CONF_EMAIL]
         _LOGGER.debug(
             "Handling 'reauth_confirm' step for %s. User input provided: %s",
             email,
@@ -197,20 +280,19 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
         if user_input is not None:
-            password = user_input[CONF_PASSWORD]
-            validation_input = {CONF_EMAIL: email, CONF_PASSWORD: password}
+            password: str = user_input[CONF_PASSWORD]
             _LOGGER.debug("Validating new password for re-authentication.")
-            errors = await self._validate_user_input(validation_input)
+            errors = await self._validate_user_input(
+                {CONF_EMAIL: email, CONF_PASSWORD: password}
+            )
 
             if not errors:
                 _LOGGER.info("Re-authentication successful for %s.", email)
-                existing_entry = await self.async_set_unique_id(email.lower())
-                if existing_entry:
-                    self.hass.config_entries.async_update_entry(
-                        existing_entry, data={**entry_data, CONF_PASSWORD: password}
-                    )
-                    await self.hass.config_entries.async_reload(existing_entry.entry_id)
-                    return self.async_abort(reason="reauth_successful")
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={CONF_PASSWORD: password},
+                    reason="reauth_successful",
+                )
 
         return self.async_show_form(
             step_id="reauth_confirm",
@@ -257,8 +339,8 @@ class IstaOptionsFlowHandler(OptionsFlow):
                     ),
                 ): NumberSelector(
                     NumberSelectorConfig(
-                        min=1,
-                        max=168,
+                        min=MIN_UPDATE_INTERVAL_HOURS,
+                        max=MAX_UPDATE_INTERVAL_HOURS,
                         step=1,
                         mode=NumberSelectorMode.SLIDER,
                         unit_of_measurement="hours",
@@ -275,6 +357,16 @@ class IstaOptionsFlowHandler(OptionsFlow):
                         mode=SelectSelectorMode.DROPDOWN,
                     )
                 ),
+                vol.Optional(
+                    CONF_SEASON_START,
+                    default=self.config_entry.options.get(
+                        CONF_SEASON_START,
+                        self.config_entry.data.get(
+                            CONF_SEASON_START,
+                            f"{date.today().year}-{self.config_entry.data.get(CONF_SEASON_START_MONTH, DEFAULT_SEASON_START_MONTH):02d}-{self.config_entry.data.get(CONF_SEASON_START_DAY, DEFAULT_SEASON_START_DAY):02d}",
+                        ),
+                    ),
+                ): DateSelector(DateSelectorConfig()),
             }
         )
 

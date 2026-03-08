@@ -27,11 +27,11 @@ fail_under = 90
 # single source of truth for the development environment's package set.
 [project]
 name = "ha-ista-calista"
-version = "0.7.0"
+version = "0.8.0"
 description = "Ista Calista custom component for Home Assistant"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
-    "pycalista-ista~=0.7.0"
+    "pycalista-ista~=0.8.0"
 ]
 
 [project.optional-dependencies]
@@ -44,16 +44,34 @@ test = [
     "aioresponses", # Correct library for mocking aiohttp sessions
     "freezegun",
     "ruff",
+    "mypy",
 ]
 
 [tool.black]
 line-length = 88
-target-version = ['py313']
+target-version = ['py314']
 include = '\.pyi?$'
 
 [tool.isort]
 profile = "black"
 multi_line_output = 3
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+exclude = ["tests/"]
+
+[[tool.mypy.overrides]]
+# homeassistant and pycalista_ista don't ship type stubs.
+module = ["homeassistant.*", "pycalista_ista.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# python-dateutil doesn't ship inline types; the stub package is types-python-dateutil.
+module = ["dateutil.*"]
+ignore_missing_imports = true
 
 [dependency-groups]
 dev = [

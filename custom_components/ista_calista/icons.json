@@ -12,6 +12,24 @@
       },
       "last_date": {
         "default": "mdi:calendar"
+      },
+      "billed_reading": {
+        "default": "mdi:file-certificate"
+      },
+      "last_billed_date": {
+        "default": "mdi:calendar-check"
+      },
+      "latest_invoice_amount": {
+        "default": "mdi:cash"
+      },
+      "invoice_amount": {
+        "default": "mdi:cash-multiple"
+      },
+      "bill_name": {
+        "default": "mdi:identifier"
+      },
+      "individual_bill": {
+        "default": "mdi:file-pdf-box"
       }
     }
   }

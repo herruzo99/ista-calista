@@ -14,7 +14,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.ista_calista.const import DOMAIN
 
-from .const import MOCK_CONFIG, MOCK_DEVICE_NO_LOCATION, MOCK_DEVICES
+from .const import MOCK_BILLED_READINGS, MOCK_CONFIG, MOCK_DEVICE_NO_LOCATION, MOCK_DEVICES, MOCK_INVOICES
 
 
 async def test_initial_fetch(
@@ -31,6 +31,8 @@ async def test_initial_fetch(
     assert coordinator.last_update_success is True
     # Check that devices from MOCK_DEVICES are present
     assert set(coordinator.data["devices"].keys()) == set(MOCK_DEVICES.keys())
+    assert "billed_readings" in coordinator.data
+    assert "invoices" in coordinator.data
 
 
 async def test_incremental_update_merging(
@@ -52,11 +54,8 @@ async def test_incremental_update_merging(
     new_reading = Reading(date=new_reading_date, reading=1100.0)
     updated_heating.history.append(new_reading)
     mock_pycalista.get_devices_history.return_value = {"heating-123": updated_heating}
-    # Advance time to trigger update
-    future_time = dt_util.now() + timedelta(
-        hours=coordinator.update_interval.total_seconds() / 3600 + 1
-    )
-    async_fire_time_changed(hass, future_time)
+    # Direct refresh to trigger update immediately and reliably in tests
+    await coordinator.async_refresh()
     await hass.async_block_till_done()
 
     # Check that new reading is merged into coordinator data
@@ -160,3 +159,41 @@ async def test_update_errors(
     mock_pycalista.get_devices_history.side_effect = error_cls("API error")
     await coordinator.async_refresh()
     assert coordinator.last_update_success is False
+
+
+async def test_billing_fetch_failure_nonfatal(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
+    """Test that billing/invoice fetch failures are non-fatal."""
+    mock_pycalista.get_devices_history.return_value = MOCK_DEVICES
+    mock_pycalista.get_billed_consumption.side_effect = IstaApiError("billing error")
+    mock_pycalista.get_invoice_xls.side_effect = IstaConnectionError("invoice error")
+
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.last_update_success is True
+    assert coordinator.data["billed_readings"] == []
+    assert coordinator.data["invoices"] == []
+
+
+async def test_billing_fetch_success(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
+    """Test that billed readings and invoices are stored in coordinator data."""
+    mock_pycalista.get_devices_history.return_value = MOCK_DEVICES
+    mock_pycalista.get_billed_consumption.return_value = MOCK_BILLED_READINGS
+    mock_pycalista.get_invoice_xls.return_value = MOCK_INVOICES
+
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.last_update_success is True
+    assert coordinator.data["billed_readings"] == MOCK_BILLED_READINGS
+    assert coordinator.data["invoices"] == MOCK_INVOICES

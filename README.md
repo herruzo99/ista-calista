@@ -25,11 +25,12 @@ This Home Assistant custom component integrates with the [ista Calista portal](h
 - **Dynamic Entity Creation:** Automatically creates and adds sensors as they appear in your ista account.
 - **Configurable Options:** Adjust the update frequency and log level directly from the UI.
 - **Re-authentication Flow:** Notifies you and prompts for a new password if your credentials expire.
+- **Reconfiguration Flow:** Change your account email, password, or historical data start date at any time without removing the integration.
 
 ## Prerequisites
 
 - An active account on the [ista Calista portal](https://oficina.ista.es/).
-- Home Assistant (Version 2024.1.0 or newer).
+- Home Assistant (Version 2026.3.0 or newer).
 - HACS (Home Assistant Community Store) installed.
 
 ## Installation
@@ -56,20 +57,98 @@ This Home Assistant custom component integrates with the [ista Calista portal](h
 
 The integration will perform an initial data sync, which may take several minutes depending on the amount of history available.
 
+## Provided Entities
+
+Each physical meter on your account creates a **device** in Home Assistant with the following entities:
+
+| Entity | Unit | Description |
+|--------|------|-------------|
+| Heating | kWh | Current meter reading for heating consumption |
+| Hot Water | m³ | Current meter reading for hot water consumption |
+| Water | m³ | Current meter reading for cold water consumption |
+| Last Measured Date | — | Timestamp of the most recent reading (diagnostic, disabled by default) |
+
+All consumption sensors feed directly into Home Assistant's **Long-Term Statistics**, making them available in the **Energy Dashboard** and compatible with history graphs.
+
+## How Data Is Updated
+
+On first setup, the integration fetches the full consumption history starting from your chosen **Consumption Start Date**. This is a one-time operation and may take a moment.
+
+On every subsequent update (default: every 24 hours), the integration fetches the last 30 days of readings. New readings are merged with the existing history, so no data is ever lost. Only net-new readings are pushed into Long-Term Statistics.
+
 ## Options
 
 After setup, you can adjust the integration's options:
 
 1.  Navigate to the Ista Calista integration on the **Devices & Services** page.
 2.  Click **Configure**.
-3.  Adjust the **Update Interval** (in hours) and **Log Level** as needed.
+3.  Adjust the **Update Interval** (1–168 hours) and **Log Level** as needed.
+
+To change your account credentials or start date, click the **three dots** next to the integration and select **Reconfigure**.
+
+## Use Cases
+
+- **Energy Dashboard:** Add your heating (kWh) and water (m³) sensors to the Home Assistant Energy Dashboard to track consumption and costs over time alongside your electricity and gas usage.
+- **Monthly Budget Alerts:** Create an automation that sends a notification if your monthly heating consumption exceeds a set threshold.
+- **Consumption Graphs:** Use the history graph card or Apexcharts to visualize daily, monthly, or yearly consumption trends.
+- **Comparative Analysis:** Compare heating consumption across different months or years to identify seasonal patterns or the effect of home improvements.
+
+## Automation Examples
+
+### Alert when monthly heating exceeds a threshold
+
+```yaml
+automation:
+  - alias: "High heating consumption alert"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.living_room_heating
+        above: 500
+    action:
+      - service: notify.mobile_app
+        data:
+          message: "Heating consumption has exceeded 500 kWh this period."
+```
+
+### Log daily water reading
+
+```yaml
+automation:
+  - alias: "Log daily water reading"
+    trigger:
+      - platform: time
+        at: "23:55:00"
+    action:
+      - service: logbook.log
+        data:
+          name: "Daily Water Reading"
+          message: "{{ states('sensor.kitchen_water') }} m³"
+```
+
+## Known Limitations
+
+- **Spain only:** This integration connects to the Spanish ista portal (`oficina.ista.es`). Other regional portals are not supported.
+- **Polling only:** Data is not pushed in real time. The integration polls the portal on a schedule (minimum 1 hour, default 24 hours). Readings from the portal itself may be delayed by days depending on your meter type.
+- **Historical data window:** The ista portal typically retains 1–2 years of history. Data older than that cannot be retrieved.
+- **No meter control:** This is a read-only integration. It cannot submit readings or interact with your meters in any way.
+- **Single account per instance:** Each integration entry corresponds to one ista account. If you have meters under multiple accounts, add the integration again for each account.
 
 ## Troubleshooting
 
-- **Authentication Failed:** Double-check your credentials. If the problem persists, log in to the official ista portal to confirm your password is correct. If you are notified of an authentication error in Home Assistant, you can re-authenticate by going to the integration's configuration.
+- **Authentication Failed:** Double-check your credentials. If the problem persists, log in to the official ista portal to confirm your password is correct. If you are notified of an authentication error in Home Assistant, go to the integration and select **Re-authenticate**.
 - **Sensors Not Appearing:** After the initial setup, it can take a few minutes for the first data pull to complete. Check the Home Assistant logs for any errors related to `ista_calista`. Ensure the "Consumption Start Date" is set to a reasonable past date.
+- **No History in Energy Dashboard:** Long-Term Statistics are imported asynchronously after each coordinator update. Wait a few minutes after the first successful update and then refresh the Energy Dashboard.
+- **Checking Logs:** Set the **Log Level** to `Debug` in the integration options (under **Configure**) to get detailed output. Remember to set it back to `Info` once you are done troubleshooting to avoid log bloat.
 
 For persistent issues, please [open an issue](https://github.com/herruzo99/ista-calista/issues) on GitHub and include any relevant logs.
+
+## Removal
+
+1.  Navigate to **Settings** > **Devices & Services**.
+2.  Find the **Ista Calista** integration and click the **three dots** menu.
+3.  Select **Delete**.
+
+Removing the integration will delete all associated config entries. The Long-Term Statistics data recorded in your Home Assistant database will also be cleared automatically.
 
 ## Development
 
@@ -100,7 +179,8 @@ This project uses [Nix](https://nixos.org/) with [flakes](https://nixos.wiki/wik
 
 The test suite is built using `pytest` and the `pytest-homeassistant-custom-component` library.
 
-To run all tests:```bash
+To run all tests:
+```bash
 pytest
 ```
 

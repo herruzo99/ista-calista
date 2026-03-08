@@ -1,11 +1,13 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from pycalista_ista import (
+    BilledReading,
     ColdWaterDevice,
     Device,
     HeatingDevice,
     HotWaterDevice,
+    Invoice,
     Reading,
 )
 
@@ -93,3 +95,55 @@ MOCK_DEVICES = {
     MOCK_HOT_WATER_DEVICE.serial_number: MOCK_HOT_WATER_DEVICE,
     MOCK_COLD_WATER_DEVICE.serial_number: MOCK_COLD_WATER_DEVICE,
 }
+
+# Mock billed readings (one per device, matching MOCK_DEVICES serials)
+MOCK_BILLED_READINGS = [
+    BilledReading(
+        serial_number="heating-123",
+        device_type="Radio Distribuidor de costes",
+        location="Living Room",
+        reading_id=1,
+        date=date(2024, 3, 1),
+        incidence="4700",
+        unit="UN",
+        previous_reading=1050.5,
+        current_reading=1080.0,
+        consumption=29.5,
+    ),
+    BilledReading(
+        serial_number="hot-water-456",
+        device_type="Contador Agua Caliente",
+        location="Bathroom",
+        reading_id=2,
+        date=date(2024, 3, 1),
+        incidence="4700",
+        unit="m3",
+        previous_reading=55.2,
+        current_reading=58.9,
+        consumption=3.7,
+    ),
+    BilledReading(
+        serial_number="cold-water-789",
+        device_type="Contador Agua Fría",
+        location="Kitchen",
+        reading_id=3,
+        date=date(2024, 3, 1),
+        incidence="4700",
+        unit="m3",
+        previous_reading=110.7,
+        current_reading=120.1,
+        consumption=9.4,
+    ),
+]
+
+# Mock invoices
+MOCK_INVOICES = [
+    Invoice(
+        invoice_id=None,
+        invoice_number="4448373/24",
+        invoice_date=date(2024, 3, 1),
+        period_start=date(2024, 1, 1),
+        period_end=date(2024, 3, 1),
+        amount=45.50,
+    ),
+]

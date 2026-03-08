@@ -2,7 +2,8 @@
     "config": {
         "abort": {
             "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
-            "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+            "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]",
+            "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
         },
         "error": {
             "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
@@ -17,14 +18,32 @@
                 "data": {
                     "email": "[%key:common::config_flow::data::email%]",
                     "password": "[%key:common::config_flow::data::password%]",
-                    "consumption_offset_date": "Consumption Start Date"
+                    "consumption_offset_date": "Consumption Start Date",
+                    "season_start": "Heating Season Start (Month/Day)"
                 },
                 "data_description": {
                     "email": "Enter the email address associated with your ista Calista account.",
                     "password": "Enter the password for your ista Calista account.",
-                    "consumption_offset_date": "Select the date from which to start importing historical consumption data (must be at least 1 month ago)."
+                    "consumption_offset_date": "Select the date from which to start importing historical consumption data (must be at least 1 month ago).",
+                    "season_start": "Select the day and month when a new consumption season begins."
                 },
                 "description": "Connect your **ista Calista** account to Home Assistant to access your heating and water usage data."
+            },
+            "reconfigure": {
+                "title": "Reconfigure ista Calista",
+                "data": {
+                    "email": "[%key:common::config_flow::data::email%]",
+                    "password": "[%key:common::config_flow::data::password%]",
+                    "consumption_offset_date": "Consumption Start Date",
+                    "season_start": "Heating Season Start (Month/Day)"
+                },
+                "data_description": {
+                    "email": "Enter the email address associated with your ista Calista account.",
+                    "password": "Enter the password for your ista Calista account.",
+                    "consumption_offset_date": "Select the date from which to start importing historical consumption data (must be at least 1 month ago).",
+                    "season_start": "Select the day and month when a new consumption season begins."
+                },
+                "description": "Update the configuration for your **ista Calista** account ({email})."
             },
             "reauth_confirm": {
                 "title": "[%key:common::config_flow::title::reauth%]",
@@ -44,11 +63,13 @@
                 "title": "ista Calista Options",
                 "data": {
                     "update_interval": "Update Interval (hours)",
-                    "log_level": "Log Level"
+                    "log_level": "Log Level",
+                    "season_start": "Heating Season Start (Month/Day)"
                 },
                 "data_description": {
                     "update_interval": "Frequency (in hours) at which to check for new consumption data from the ista Calista portal.",
-                    "log_level": "Set the detail level for integration and library logs. 'Debug' is very verbose and should only be used for troubleshooting."
+                    "log_level": "Set the detail level for integration and library logs. 'Debug' is very verbose and should only be used for troubleshooting.",
+                    "season_start": "Select the day and month when a new consumption season begins."
                 }
             }
         },
@@ -69,15 +90,66 @@
             },
             "last_date": {
                 "name": "Last Measured Date"
+            },
+            "billed_reading": {
+                "name": "Billed Reading"
+            },
+            "billed_reading_at_location": {
+                "name": "Billed Reading ({location})"
+            },
+            "last_billed_date": {
+                "name": "Billed Reading Date"
+            },
+            "last_billed_date_type": {
+                "name": "Billed Reading Date ({device_type})"
+            },
+            "last_billed_date_at_location": {
+                "name": "Billed Reading Date ({location})"
+            },
+            "latest_invoice_amount": {
+                "name": "Latest Invoice Amount"
+            },
+            "invoice_amount": {
+                "name": "{device_type} Invoice Amount"
+            },
+            "average_daily_consumption": {
+                "name": "Average Daily Consumption"
+            },
+            "seasonal_consumption": {
+                "name": "Seasonal Consumption"
+            },
+            "individual_bill": {
+                "name": "Invoice {invoice_number} ({device_type})"
+            },
+            "bill_name": {
+                "name": "Latest Invoice ID: {device_type}"
             }
+        },
+        "binary_sensor": {
+            "connection_status": {
+                "name": "Connection Status"
+            }
+        }
+    },
+    "services": {
+        "download_invoice": {
+            "name": "Download invoice",
+            "description": "Downloads an invoice PDF using its specific ID.",
+            "fields": {
+                "invoice_id": {
+                    "name": "Invoice ID",
+                    "description": "The unique ID of the invoice (e.g., from a bill sensor's attributes)."
+                }
+            }
+        },
+        "get_invoices": {
+            "name": "Get invoices",
+            "description": "Returns a detailed list of all invoices found in your account."
         }
     },
     "exceptions": {
         "authentication_exception": {
             "message": "Authentication failed for {email}. Please check your login credentials and re-authenticate."
-        },
-        "connection_exception": {
-            "message": "Unable to connect to the ista Calista service. Please check your network connection and try again later."
         }
     }
 }

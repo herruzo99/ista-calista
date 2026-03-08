@@ -1,7 +1,7 @@
 """Tests for the config flow of ista_calista."""
 
 
-from homeassistant.config_entries import SOURCE_REAUTH, SOURCE_USER
+from homeassistant.config_entries import SOURCE_REAUTH, SOURCE_RECONFIGURE, SOURCE_USER
 from homeassistant.const import CONF_PASSWORD
 from homeassistant.data_entry_flow import FlowResultType
 from pycalista_ista import IstaApiError, IstaConnectionError, IstaLoginError
@@ -217,6 +217,71 @@ async def test_reauth_flow_updates_entry(
         hass.config_entries.async_get_entry(entry.entry_id).data[CONF_PASSWORD]
         == "newpassword"
     )
+
+
+async def test_reconfigure_flow_shows_form(
+    recorder_mock, hass, enable_custom_integrations
+):
+    """Test the reconfiguration flow shows a pre-filled form."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG["email"].lower()
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+
+
+async def test_reconfigure_flow_success(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
+    """Test completing reconfiguration updates the config entry and reloads."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG["email"].lower()
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+    )
+    new_config = {**MOCK_CONFIG, "consumption_offset_date": "2023-01-01"}
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input=new_config,
+    )
+    await hass.async_block_till_done()
+    assert result2["type"] is FlowResultType.ABORT
+    assert result2["reason"] == "reconfigure_successful"
+    assert entry.data["consumption_offset_date"] == "2023-01-01"
+
+
+async def test_reconfigure_flow_invalid_auth(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
+    """Test that reconfiguration shows an error on invalid credentials."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG["email"].lower()
+    )
+    entry.add_to_hass(hass)
+    mock_pycalista.login.side_effect = IstaLoginError("Bad credentials")
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+    )
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input=MOCK_CONFIG,
+    )
+    await hass.async_block_till_done()
+    assert result2["type"] is FlowResultType.FORM
+    assert result2["step_id"] == "reconfigure"
+    assert result2["errors"] == {"base": "invalid_auth"}
 
 
 async def test_reauth_fails_and_shows_form_again(

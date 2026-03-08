@@ -11,10 +11,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.ista_calista.const import DOMAIN
 
 from .const import (
+    MOCK_BILLED_READINGS,
     MOCK_CONFIG,
     MOCK_DEVICE_NO_LOCATION,
     MOCK_DEVICES,
     MOCK_GENERIC_DEVICE,
+    MOCK_INVOICES,
 )
 
 
@@ -157,5 +159,79 @@ async def test_sensor_unavailable_and_native_value(
 
     state = hass.states.get(sensor_entity_id)
     assert state.state == STATE_UNAVAILABLE
-    print(caplog.text)
     assert "Sensor heating-123_heating is unavailable." in caplog.text
+
+
+async def test_billed_sensor_creation(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
+    """Test that IstaBilledDeviceSensor entities are created when billed data is present."""
+    mock_pycalista.get_devices_history.return_value = copy.deepcopy(MOCK_DEVICES)
+    mock_pycalista.get_billed_consumption.return_value = MOCK_BILLED_READINGS
+
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG["email"])
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    entity_registry = er.async_get(hass)
+
+    # One billed_reading sensor per device
+    for reading in MOCK_BILLED_READINGS:
+        unique_id = f"{reading.serial_number}_billed_reading"
+        entity_id = entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+        assert entity_id is not None, f"Missing billed sensor for {reading.serial_number}"
+
+    # Verify state for heating device
+    heating_entity_id = entity_registry.async_get_entity_id(
+        "sensor", DOMAIN, "heating-123_billed_reading"
+    )
+    state = hass.states.get(heating_entity_id)
+    assert state is not None
+    assert state.state == "1080.0"
+
+
+async def test_account_sensor_creation(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
+    """Test that IstaAccountSensor is created with invoice data."""
+    mock_pycalista.get_devices_history.return_value = copy.deepcopy(MOCK_DEVICES)
+    mock_pycalista.get_invoice_xls.return_value = MOCK_INVOICES
+
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG["email"])
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    entity_registry = er.async_get(hass)
+    entity_id = entity_registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{MOCK_CONFIG['email']}_latest_invoice_amount"
+    )
+    assert entity_id is not None
+
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.state == "45.5"
+
+
+async def test_account_sensor_no_invoices(
+    recorder_mock, hass, enable_custom_integrations, mock_pycalista
+):
+    """Test that IstaAccountSensor state is None when invoices list is empty."""
+    mock_pycalista.get_devices_history.return_value = copy.deepcopy(MOCK_DEVICES)
+    mock_pycalista.get_invoice_xls.return_value = []
+
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, unique_id=MOCK_CONFIG["email"])
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    entity_registry = er.async_get(hass)
+    entity_id = entity_registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{MOCK_CONFIG['email']}_latest_invoice_amount"
+    )
+    assert entity_id is not None
+
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.state == STATE_UNAVAILABLE

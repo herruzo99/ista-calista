@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import logging
+from typing import Final
 
-from homeassistant.components.recorder import get_instance
+import voluptuous as vol
+
+from homeassistant.components.recorder import get_instance  # type: ignore[attr-defined]
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    ServiceValidationError,
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -35,7 +42,7 @@ type IstaConfigEntry = ConfigEntry[IstaCoordinator]
 _LOGGER = logging.getLogger(__name__)
 
 # Maps device models from the device registry to their corresponding sensor key.
-MODEL_TO_KEY_MAP = {
+MODEL_TO_KEY_MAP: Final[dict[str, str]] = {
     "Cold Water Meter": "water",
     "Hot Water Meter": "hot_water",
     "Heating Meter": "heating",
@@ -65,7 +72,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: IstaConfigEntry) -> bool
             DEFAULT_LOG_LEVEL,
         )
         log_level_str = DEFAULT_LOG_LEVEL
-    log_level_str = log_level_str.upper()
     try:
         # Set log level for the underlying library
         ista.set_log_level(log_level_str)
@@ -110,6 +116,120 @@ async def async_setup_entry(hass: HomeAssistant, entry: IstaConfigEntry) -> bool
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Register services
+    async def async_download_invoice(call: ServiceCall) -> dict[str, str]:
+        """Download a specific invoice by ID."""
+        invoice_id = call.data["invoice_id"]
+
+        _LOGGER.debug(
+            "Service called: download_invoice for invoice_id=%s", invoice_id
+        )
+
+        # Find invoice object to get date for filename
+        invoice = None
+        for coord in hass.data[DOMAIN].values():
+            if not coord.data or "invoices" not in coord.data:
+                continue
+            invoice = next(
+                (i for i in coord.data["invoices"] if i.invoice_id == invoice_id),
+                None,
+            )
+            if invoice:
+                break
+
+        if not invoice:
+            raise ServiceValidationError(
+                f"Invoice with ID {invoice_id} not found in the local cache. "
+                "Please run 'Get invoices' first."
+            )
+
+        try:
+            # We use the 'ista' client from the first coordinator found
+            content = await coordinator.ista.get_invoice_pdf(invoice_id)
+        except (IstaApiError, IstaConnectionError) as err:
+            raise ServiceValidationError(
+                f"Failed to download invoice PDF for ID {invoice_id}: {err}"
+            ) from err
+
+        date_str = (
+            invoice.invoice_date.strftime("%Y%m%d")
+            if invoice and invoice.invoice_date
+            else "unknown_date"
+        )
+        device_type_str = (
+            invoice.device_type.replace(' ', '_').lower()
+            if invoice and invoice.device_type
+            else "invoice"
+        )
+        filename = f"ista_{device_type_str}_{date_str}.pdf"
+
+        # Save to www directory
+        base_path = hass.config.path("www")
+        import os
+        if not os.path.exists(base_path):
+             os.makedirs(base_path)
+             
+        filepath = os.path.join(base_path, filename)
+        
+        def save_file():
+            with open(filepath, "wb") as f:
+                f.write(content)
+        
+        await hass.async_add_executor_job(save_file)
+        _LOGGER.info("Saved invoice to %s", filepath)
+        
+        return {
+            "success": "true",
+            "filename": filename,
+            "path": filepath,
+        }
+
+    hass.services.async_register(
+        DOMAIN,
+        "download_invoice",
+        async_download_invoice,
+        schema=vol.Schema(
+            {
+                vol.Required("invoice_id"): cv.string,
+            }
+        ),
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    async def async_get_invoices(call: ServiceCall) -> dict[str, list[dict]]:
+        """Return a detailed list of invoices."""
+        _LOGGER.debug("Service called: get_invoices")
+        all_invoices: list[dict] = []
+        for coord in hass.data[DOMAIN].values():
+            if coord.data and "invoices" in coord.data:
+                for inv in coord.data["invoices"]:
+                    all_invoices.append({
+                        "invoice_id": inv.invoice_id,
+                        "invoice_number": inv.invoice_number,
+                        "device_type": inv.device_type,
+                        "amount": inv.amount,
+                        "date": inv.invoice_date.isoformat() if inv.invoice_date else None,
+                        "period_start": inv.period_start.isoformat() if inv.period_start else None,
+                        "period_end": inv.period_end.isoformat() if inv.period_end else None,
+                    })
+        
+        # Deduplicate if multiple coords have same data
+        if not all_invoices:
+             return {"invoices": []}
+
+        unique_invoices = {
+            (i["invoice_number"], i["date"], i["device_type"], i["amount"]): i for i in all_invoices
+        }.values()
+        invoices_list = sorted(list(unique_invoices), key=lambda x: x["date"] or "", reverse=True)
+        
+        _LOGGER.debug("Found %d invoices", len(invoices_list))
+        return {"invoices": invoices_list}
+
+    hass.services.async_register(
+        DOMAIN, "get_invoices", async_get_invoices,
+        supports_response=True
+    )
+
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
     _LOGGER.debug("Finished setting up config entry: %s", entry.entry_id)
@@ -129,7 +249,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: IstaConfigEntry) -> boo
         coordinator = entry.runtime_data
         await coordinator.ista.close()
         hass.data[DOMAIN].pop(entry.entry_id, None)
-        hass.data[DOMAIN].pop("entities", None)
         _LOGGER.info("Successfully unloaded config entry: %s", entry.entry_id)
 
     return unload_ok
@@ -154,8 +273,14 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         )
         return
 
-    statistic_ids_to_clear = []
+    statistic_ids_to_clear: list[str] = []
     for device in devices_for_entry:
+        if device.model is None:
+            _LOGGER.warning(
+                "Device %s has no model set. Statistics for this device may not be cleared.",
+                device.id,
+            )
+            continue
         sensor_key = MODEL_TO_KEY_MAP.get(device.model)
         if not sensor_key:
             _LOGGER.warning(
