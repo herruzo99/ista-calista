@@ -1,7 +1,6 @@
 """Test the ista_calista services."""
 
 from unittest.mock import AsyncMock, patch, mock_open
-import os
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -40,7 +39,6 @@ async def test_download_invoice_service_success(
 ):
     """Test the download_invoice service success case."""
     # Ensure invoice has an ID for service to find it
-    from pycalista_ista import Invoice
     from dataclasses import replace
     inv = replace(MOCK_INVOICES[0], invoice_id="INV001")
     
