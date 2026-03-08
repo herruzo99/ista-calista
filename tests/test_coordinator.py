@@ -1,16 +1,14 @@
 """Test the Ista Calista data update coordinator."""
 
 import copy
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
 from homeassistant.core import HomeAssistant
-from homeassistant.util import dt as dt_util
 from pycalista_ista import IstaApiError, IstaConnectionError, IstaLoginError, Reading
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
-    async_fire_time_changed,
 )
 
 from custom_components.ista_calista.const import DOMAIN
