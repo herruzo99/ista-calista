@@ -8,6 +8,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ista_calista.const import (
     CONF_LOG_LEVEL,
+    CONF_SEASON_START,
     CONF_UPDATE_INTERVAL,
     DOMAIN,
 )
@@ -38,7 +39,11 @@ async def test_options_flow(
     ) as mock_setup_entry:
         result2 = await hass.config_entries.options.async_configure(
             result["flow_id"],
-            user_input={CONF_UPDATE_INTERVAL: 12, CONF_LOG_LEVEL: "DEBUG"},
+            user_input={
+                CONF_UPDATE_INTERVAL: 12,
+                CONF_LOG_LEVEL: "DEBUG",
+                CONF_SEASON_START: "2024-09-01",
+            },
         )
         await hass.async_block_till_done()
 
