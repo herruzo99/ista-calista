@@ -34,11 +34,13 @@ jobs:
     steps:
       - name: "Checkout code"
         uses: actions/checkout@v4
-      - name: "Set up Python"
-        uses: actions/setup-python@v5
+      - name: Install Nix
+        uses: cachix/install-nix-action@v22
         with:
-          python-version: '3.12'
-      - name: "Install Ruff"
-        run: pip install ruff
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Set up Cachix
+        uses: cachix/cachix-action@v12
+        with:
+          name: nix-community
       - name: "Run Ruff"
-        run: ruff check .
+        run: nix develop --command ruff check .
