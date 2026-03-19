@@ -19,14 +19,14 @@
         # that the 0.8.0 development version takes precedence at runtime.
         pycalista-ista-for-ha = ha.python.pkgs.buildPythonPackage rec {
           pname = "pycalista-ista";
-          version = "0.8.0";
+          version = "0.9.0";
           format = "pyproject";
 
           src = pkgs.fetchFromGitHub {
             owner = "herruzo99";
             repo = "pycalista-ista";
             rev = "v${version}";
-            hash = "sha256-LjQGeTzUPxSBN9Fi//yEYs8ArvgzCcDQ827xPhrxEW8=";
+            hash = "sha256-TcCzbMqdAMESvu1sQFSnLOlR7bP2gOGRXqRWUHVh9Eg=";
           };
 
           # All dependencies are now drawn from `ha.python.pkgs`, ensuring consistency.

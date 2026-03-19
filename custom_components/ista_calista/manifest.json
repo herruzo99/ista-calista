@@ -19,7 +19,7 @@
   ],
   "quality_scale": "gold",
   "requirements": [
-    "pycalista-ista~=0.8.0"
+    "pycalista-ista~=0.9.0"
   ],
-  "version": "0.8.0"
+  "version": "0.9.0"
 }
