@@ -95,11 +95,22 @@ class IstaCoordinator(DataUpdateCoordinator[IstaDeviceData]):
 
         fetch_end_date = dt_util.now().date()
 
+        async def _get_invoice_xls_in_executor() -> list[Invoice]:
+            """Run the blocking XLS fetch in an executor thread to avoid blocking the event loop.
+
+            pandas triggers a blocking importlib.import_module('xlrd') call inside
+            get_invoice_xls. Running the whole coroutine in a thread via asyncio.run()
+            keeps that import off the HA event loop.
+            """
+            return await self.hass.async_add_executor_job(
+                lambda: asyncio.run(self.ista.get_invoice_xls())
+            )
+
         devices_result, billed_result, invoice_result, invoice_xls_result = await asyncio.gather(
             self.ista.get_devices_history(start=fetch_start_date, end=fetch_end_date),
             self.ista.get_billed_consumption(),
             self.ista.get_invoices(),
-            self.ista.get_invoice_xls(),
+            _get_invoice_xls_in_executor(),
             return_exceptions=True,
         )
 

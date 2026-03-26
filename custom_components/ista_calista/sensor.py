@@ -715,13 +715,22 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
                 .title()
             )
 
+            _unit = self.entity_description.native_unit_of_measurement
+            if _unit == UnitOfEnergy.KILO_WATT_HOUR:
+                _unit_class = "energy"
+            elif _unit == UnitOfVolume.CUBIC_METERS:
+                _unit_class = "volume"
+            else:
+                _unit_class = None
+
             metadata = StatisticMetaData(
                 mean_type=StatisticMeanType.NONE,
                 has_sum=True,
                 name=f"{device_name} {sensor_name}",
                 source=DOMAIN,
                 statistic_id=statistic_id,
-                unit_of_measurement=self.entity_description.native_unit_of_measurement,
+                unit_of_measurement=_unit,
+                unit_class=_unit_class,
             )
 
             statistics_to_import: list[StatisticData] = []
