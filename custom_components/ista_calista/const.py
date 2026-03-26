@@ -9,7 +9,10 @@ DOMAIN: Final[str] = "ista_calista"
 MANUFACTURER: Final[str] = "ista"
 
 # --- Platforms ---
-PLATFORMS: Final[list[Platform]] = [Platform.SENSOR, Platform.BINARY_SENSOR]
+PLATFORMS: Final[list[Platform]] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON]
+
+# --- Events ---
+LTS_UPDATED_EVENT: Final[str] = "ista_calista_lts_updated"
 
 # --- Configuration Constants ---
 # CONF_EMAIL and CONF_PASSWORD are imported from homeassistant.const

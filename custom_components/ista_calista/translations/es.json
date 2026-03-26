@@ -80,6 +80,11 @@
         }
     },
     "entity": {
+        "button": {
+            "refresh_data": {
+                "name": "Actualizar Datos"
+            }
+        },
         "sensor": {
             "heating": {
                 "name": "Calefacción"
@@ -92,6 +97,9 @@
             },
             "last_date": {
                 "name": "Última Fecha Medida"
+            },
+            "lts_last_import": {
+                "name": "Última Importación LTS"
             },
             "billed_reading": {
                 "name": "Lectura Facturada"

@@ -78,6 +78,11 @@
         }
     },
     "entity": {
+        "button": {
+            "refresh_data": {
+                "name": "Refresh Data"
+            }
+        },
         "sensor": {
             "heating": {
                 "name": "Heating"
@@ -90,6 +95,9 @@
             },
             "last_date": {
                 "name": "Last Measured Date"
+            },
+            "lts_last_import": {
+                "name": "LTS Last Import"
             },
             "billed_reading": {
                 "name": "Billed Reading"

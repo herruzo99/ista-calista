@@ -20,13 +20,14 @@ from homeassistant.components.recorder.statistics import (
     get_last_statistics,
 )
 from homeassistant.components.sensor import (
+    RestoreSensor,
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
     SensorStateClass,
 )
 from homeassistant.const import CONF_EMAIL, EntityCategory, UnitOfEnergy, UnitOfVolume
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
@@ -41,6 +42,7 @@ from .const import (
     DEFAULT_SEASON_START_DAY,
     DEFAULT_SEASON_START_MONTH,
     DOMAIN,
+    LTS_UPDATED_EVENT,
     MANUFACTURER,
 )
 
@@ -398,6 +400,14 @@ async def async_setup_entry(
                         new_entities.append(IstaSensor(coordinator, serial, description))
                         tracked_entity_ids.add(unique_id)
 
+                        if description.generate_lts:
+                            lts_uid = f"{serial}_{description.key}_lts_last_import"
+                            if lts_uid not in tracked_entity_ids:
+                                new_entities.append(
+                                    IstaLtsLastImportSensor(serial, description.key, device)
+                                )
+                                tracked_entity_ids.add(lts_uid)
+
                 # Average daily consumption sensor
                 avg_unique_id = f"{serial}_average_daily_consumption"
                 if avg_unique_id not in tracked_entity_ids:
@@ -691,6 +701,13 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
 
             if not new_readings:
                 _LOGGER.debug("No new readings to import for %s.", statistic_id)
+                self.hass.bus.async_fire(
+                    LTS_UPDATED_EVENT,
+                    {
+                        "statistic_id": statistic_id,
+                        "timestamp": dt_util.now().isoformat(),
+                    },
+                )
                 return
 
             _LOGGER.debug(
@@ -709,11 +726,12 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
                 )
 
             device_name = device.location if device.location else f"Ista Device {self._serial_number[-4:]}"
-            sensor_name = (
+            _fallback_name = (
                 (self.entity_description.translation_key or self.entity_description.key)
                 .replace("_", " ")
                 .title()
             )
+            sensor_name = self.name or _fallback_name
 
             _unit = self.entity_description.native_unit_of_measurement
             if _unit == UnitOfEnergy.KILO_WATT_HOUR:
@@ -808,7 +826,48 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
                     statistic_id,
                 )
                 async_add_external_statistics(self.hass, metadata, statistics_to_import)
+                self.hass.bus.async_fire(
+                    LTS_UPDATED_EVENT,
+                    {
+                        "statistic_id": statistic_id,
+                        "timestamp": dt_util.now().isoformat(),
+                    },
+                )
             _LOGGER.debug("Releasing statistics import lock for %s", statistic_id)
+
+
+class IstaLtsLastImportSensor(RestoreSensor):
+    """Diagnostic sensor showing when LTS statistics were last successfully imported for a device."""
+
+    _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+    _attr_should_poll = False
+
+    def __init__(self, serial_number: str, key: str, device: Device) -> None:
+        """Initialize the LTS last import sensor."""
+        self._attr_unique_id = f"{serial_number}_{key}_lts_last_import"
+        self._attr_translation_key = "lts_last_import"
+        self._attr_device_info = _make_device_info(device, serial_number)
+        sensor_unique_id = f"{serial_number}_{key}"
+        self._statistic_id = f"{DOMAIN}:{sensor_unique_id.replace('-', '_')}"
+
+    async def async_added_to_hass(self) -> None:
+        """Restore last state and subscribe to LTS update events."""
+        await super().async_added_to_hass()
+        if (last_data := await self.async_get_last_sensor_data()) is not None:
+            self._attr_native_value = last_data.native_value
+        self.async_on_remove(
+            self.hass.bus.async_listen(LTS_UPDATED_EVENT, self._handle_lts_updated)
+        )
+
+    @callback
+    def _handle_lts_updated(self, event: Event) -> None:
+        """Handle an LTS import completion event from the paired IstaSensor."""
+        if event.data.get("statistic_id") == self._statistic_id:
+            self._attr_native_value = dt_util.parse_datetime(event.data["timestamp"])
+            self.async_write_ha_state()
 
 
 class IstaBilledDeviceSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
