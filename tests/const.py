@@ -1,4 +1,7 @@
+import copy
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
+from unittest.mock import AsyncMock, MagicMock
 
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from pycalista_ista import (
@@ -12,6 +15,23 @@ from pycalista_ista import (
 )
 
 from custom_components.ista_calista.const import CONF_OFFSET, CONF_SEASON_START
+
+
+@dataclass(frozen=True)
+class FakePortalAccount:
+    """Stand-in for the library PortalAccount (pycalista-ista >= 0.10.0).
+
+    The frozen contract is ``PortalAccount(account_id: str, label: str)``. The
+    class is rebuilt here so the tests do not depend on the installed version.
+    """
+
+    account_id: str
+    label: str
+
+
+# Two portal properties of one email, used to prove property isolation.
+MOCK_ACCOUNT = FakePortalAccount(account_id="acc-1", label="Calle Mayor 1")
+MOCK_ACCOUNT_OTHER = FakePortalAccount(account_id="acc-2", label="Calle Mayor 2")
 
 # Mock user configuration (email, password, and offset date)
 MOCK_CONFIG = {
@@ -149,3 +169,43 @@ MOCK_INVOICES = [
         device_type="heating",
     ),
 ]
+
+
+# --- Second property fixtures (same email, different portal property) ---
+
+
+def make_second_property_devices():
+    """Return meters with serials that differ from MOCK_DEVICES."""
+    heating = copy.deepcopy(MOCK_HEATING_DEVICE)
+    heating.serial_number = "heating-999"
+    heating.location = "Second Property Living Room"
+    cold_water = copy.deepcopy(MOCK_COLD_WATER_DEVICE)
+    cold_water.serial_number = "cold-water-999"
+    cold_water.location = "Second Property Kitchen"
+    return {
+        heating.serial_number: heating,
+        cold_water.serial_number: cold_water,
+    }
+
+
+SECOND_PROPERTY_DEVICES = make_second_property_devices()
+
+
+class RecordingSessionFactory:
+    """Create a fresh mock aiohttp session on every call.
+
+    The integration creates one private session per config entry, so the tests
+    need to see each session separately.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the factory."""
+        self.sessions: list[MagicMock] = []
+
+    def __call__(self, *args: object, **kwargs: object) -> MagicMock:
+        """Return a new session mock."""
+        session = MagicMock(name=f"clientsession-{len(self.sessions)}")
+        session.close = AsyncMock()
+        session.closed = False
+        self.sessions.append(session)
+        return session

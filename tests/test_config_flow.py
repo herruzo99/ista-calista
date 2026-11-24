@@ -8,9 +8,15 @@ from pycalista_ista import IstaApiError, IstaConnectionError, IstaLoginError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ista_calista.config_flow import get_default_offset_date
-from custom_components.ista_calista.const import CONF_OFFSET, CONF_SEASON_START, DOMAIN
+from custom_components.ista_calista.const import (
+    CONF_ACCOUNT_ID,
+    CONF_ACCOUNT_LABEL,
+    CONF_OFFSET,
+    CONF_SEASON_START,
+    DOMAIN,
+)
 
-from .const import MOCK_CONFIG
+from .const import MOCK_ACCOUNT, MOCK_CONFIG
 
 
 async def test_show_user_form_initial(recorder_mock, hass, enable_custom_integrations):
@@ -50,10 +56,17 @@ async def test_user_flow_success(
         user_input=MOCK_CONFIG,
     )
     await hass.async_block_till_done()
-    # Expect a config entry to be created
+    # Expect a config entry to be created for the one property of the account.
     assert result2["type"] is FlowResultType.CREATE_ENTRY
-    assert result2["title"] == MOCK_CONFIG["email"]
-    assert result2["data"] == MOCK_CONFIG
+    assert result2["title"] == f"{MOCK_CONFIG['email']} \u2014 {MOCK_ACCOUNT.label}"
+    assert result2["data"] == {
+        **MOCK_CONFIG,
+        CONF_ACCOUNT_ID: MOCK_ACCOUNT.account_id,
+        CONF_ACCOUNT_LABEL: MOCK_ACCOUNT.label,
+    }
+    assert result2["result"].unique_id == (
+        f"{MOCK_CONFIG['email']}:{MOCK_ACCOUNT.account_id}"
+    )
 
 
 async def test_user_flow_invalid_auth(

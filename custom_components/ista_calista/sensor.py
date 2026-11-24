@@ -26,7 +26,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import CONF_EMAIL, EntityCategory, UnitOfEnergy, UnitOfVolume
+from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfVolume
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -35,6 +35,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 from pycalista_ista import BilledReading, ColdWaterDevice, Device, HeatingDevice, HotWaterDevice, Invoice
 
+from .account import account_device_info, account_namespace, slug
 from .const import (
     CONF_SEASON_START,
     CONF_SEASON_START_DAY,
@@ -198,6 +199,16 @@ def _make_device_info(device: Device, serial_number: str) -> DeviceInfo:
         model=model,
         configuration_url="https://oficina.ista.es/GesCon/MainPageAbo.do",
     )
+
+
+def _invoice_token(invoice: Invoice) -> str:
+    """Return a readable token that identifies one invoice inside an entry.
+
+    The invoice ID is unique per property but is opaque. When the portal gave
+    no invoice number, the ID keeps invoices with a missing number apart.
+    """
+    identity = invoice.invoice_number or invoice.invoice_id or "unknown"
+    return f"{identity}_{slug(invoice.device_type)}"
 
 
 class IstaAverageDailySensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
@@ -371,6 +382,9 @@ async def async_setup_entry(
     billed_tracked: set[str] = set()
     invoice_tracked: set[str] = set()
     account_sensors_added = False
+    # Account-level unique IDs carry the property namespace, so two properties
+    # of one email never collide. Meter entities stay serial based.
+    namespace = account_namespace(config_entry)
 
     @callback
     def _add_entities_callback() -> None:
@@ -475,7 +489,9 @@ async def async_setup_entry(
         invoices = coordinator.data.get("invoices", [])
         device_types = {inv.device_type for inv in invoices if inv.device_type}
         for d_type in device_types:
-            unique_id = f"{config_entry.unique_id}_invoice_{d_type.lower().replace(' ', '_')}"
+            unique_id = (
+                f"{namespace}_invoice_{slug(d_type)}"
+            )
             if unique_id not in invoice_tracked:
                 description = CalistaInvoiceSensorEntityDescription(
                     key="invoice_amount",
@@ -521,7 +537,7 @@ async def async_setup_entry(
 
         # Billed Date sensors — one per type
         for d_type, reading in types_with_readings.items():
-            unique_id = f"billed_date_{d_type.lower().replace(' ', '_')}"
+            unique_id = f"{namespace}_billed_date_{slug(d_type)}"
             if unique_id not in billed_tracked:
                 new_entities.append(
                     IstaBilledDateTypeSensor(coordinator, config_entry, d_type, reading)
@@ -530,18 +546,16 @@ async def async_setup_entry(
 
         # Bill Name Entities (to facilitate download action)
         for d_type in device_types:
-            inv_dev_type = (d_type or "unknown").lower().replace(" ", "_")
-            unique_id = f"bill_name_{inv_dev_type}"
+            unique_id = f"{namespace}_bill_name_{slug(d_type)}"
             if unique_id not in invoice_tracked:
                 new_entities.append(IstaBillNameSensor(coordinator, config_entry, d_type))
                 invoice_tracked.add(unique_id)
 
-        # Individual Bill Entities
+        # Individual Bill Entities — one per invoice with an identity
         for invoice in invoices:
-            if not invoice.invoice_number:
+            if not (invoice.invoice_number or invoice.invoice_id):
                 continue
-            inv_dev_type = (invoice.device_type or "unknown").lower().replace(" ", "_")
-            unique_id = f"bill_{invoice.invoice_number}_{inv_dev_type}"
+            unique_id = f"{namespace}_bill_{_invoice_token(invoice)}"
             if unique_id not in invoice_tracked:
                 new_entities.append(IstaBillSensor(coordinator, config_entry, invoice))
                 invoice_tracked.add(unique_id)
@@ -944,15 +958,11 @@ class IstaAccountSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
         super().__init__(coordinator)
         self._config_entry = config_entry
         self.entity_description = description
-        self._attr_unique_id = f"{config_entry.unique_id}_{description.key}"
-        self._attr_translation_key = description.translation_key
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, config_entry.entry_id)},
-            name=f"Ista Account {config_entry.data.get(CONF_EMAIL, '')}",
-            manufacturer=MANUFACTURER,
-            model="Ista Calista Account",
-            configuration_url="https://oficina.ista.es/GesCon/MainPageAbo.do",
+        self._attr_unique_id = (
+            f"{account_namespace(config_entry)}_{description.key}"
         )
+        self._attr_translation_key = description.translation_key
+        self._attr_device_info = account_device_info(config_entry)
         _LOGGER.debug("IstaAccountSensor initialized: %s", self.unique_id)
 
     @property
@@ -987,17 +997,11 @@ class IstaInvoiceSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
         self._config_entry = config_entry
         self.entity_description = description
         self._attr_unique_id = (
-            f"{config_entry.unique_id}_invoice_"
-            f"{description.device_type.lower().replace(' ', '_')}"
+            f"{account_namespace(config_entry)}_invoice_"
+            f"{slug(description.device_type)}"
         )
         self._attr_translation_key = description.translation_key
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, config_entry.entry_id)},
-            name=f"Ista Account {config_entry.data.get(CONF_EMAIL, '')}",
-            manufacturer=MANUFACTURER,
-            model="Ista Calista Account",
-            configuration_url="https://oficina.ista.es/GesCon/MainPageAbo.do",
-        )
+        self._attr_device_info = account_device_info(config_entry)
         _LOGGER.debug("IstaInvoiceSensor initialized: %s", self.unique_id)
 
     @property
@@ -1053,9 +1057,12 @@ class IstaBillSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
     ) -> None:
         """Initialize the bill sensor."""
         super().__init__(coordinator)
+        self._invoice_id = invoice.invoice_id
         self._invoice_number = invoice.invoice_number
         self._device_type = invoice.device_type
-        self._attr_unique_id = f"bill_{invoice.invoice_number}_{invoice.device_type.lower().replace(' ', '_')}"
+        self._attr_unique_id = (
+            f"{account_namespace(config_entry)}_bill_{_invoice_token(invoice)}"
+        )
         self._attr_translation_key = "individual_bill"
         self._attr_translation_placeholders = {
             "invoice_id": invoice.invoice_id,
@@ -1065,35 +1072,42 @@ class IstaBillSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
         self._attr_native_unit_of_measurement = "EUR"
         self._attr_device_class = SensorDeviceClass.MONETARY
         self._attr_state_class = SensorStateClass.TOTAL
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, config_entry.entry_id)},
-            name=f"Ista Account {config_entry.data.get(CONF_EMAIL, '')}",
-            manufacturer=MANUFACTURER,
-            model="Ista Calista Account",
-            configuration_url="https://oficina.ista.es/GesCon/MainPageAbo.do",
-        )
+        self._attr_device_info = account_device_info(config_entry)
         _LOGGER.debug("IstaBillSensor initialized: %s", self.unique_id)
+
+    def _find_invoice(self) -> Invoice | None:
+        """Return the invoice of this entity.
+
+        The invoice ID is the strongest key; the invoice number alone is not
+        unique when a property has several device types.
+        """
+        if not self.coordinator.data or "invoices" not in self.coordinator.data:
+            return None
+        invoices: list[Invoice] = self.coordinator.data["invoices"]
+        if self._invoice_id:
+            for candidate in invoices:
+                if candidate.invoice_id == self._invoice_id:
+                    return candidate
+        return next(
+            (
+                i
+                for i in invoices
+                if i.invoice_number == self._invoice_number
+                and i.device_type == self._device_type
+            ),
+            None,
+        )
 
     @property
     def native_value(self) -> float | None:
         """Return the amount of the invoice."""
-        if not self.coordinator.data or "invoices" not in self.coordinator.data:
-            return None
-        invoice = next(
-            (i for i in self.coordinator.data["invoices"] if i.invoice_number == self._invoice_number),
-            None,
-        )
+        invoice = self._find_invoice()
         return invoice.amount if invoice else None
 
     @property
     def extra_state_attributes(self) -> dict:
         """Return extra state attributes."""
-        if not self.coordinator.data or "invoices" not in self.coordinator.data:
-            return {}
-        invoice = next(
-            (i for i in self.coordinator.data["invoices"] if i.invoice_number == self._invoice_number),
-            None,
-        )
+        invoice = self._find_invoice()
         if not invoice:
             return {}
         return {
@@ -1120,16 +1134,12 @@ class IstaBillNameSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
         """Initialize the bill name sensor."""
         super().__init__(coordinator)
         self._device_type = device_type
-        self._attr_unique_id = f"bill_name_{device_type.lower().replace(' ', '_')}"
+        self._attr_unique_id = (
+            f"{account_namespace(config_entry)}_bill_name_{slug(device_type)}"
+        )
         self._attr_translation_key = "bill_name"
         self._attr_translation_placeholders = {"device_type": device_type}
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, config_entry.entry_id)},
-            name=f"Ista Account {config_entry.data.get(CONF_EMAIL, '')}",
-            manufacturer=MANUFACTURER,
-            model="Ista Calista Account",
-            configuration_url="https://oficina.ista.es/GesCon/MainPageAbo.do",
-        )
+        self._attr_device_info = account_device_info(config_entry)
         _LOGGER.debug("IstaBillNameSensor initialized: %s", self.unique_id)
 
     @property
@@ -1164,17 +1174,13 @@ class IstaBilledDateTypeSensor(CoordinatorEntity["IstaCoordinator"], SensorEntit
         """Initialize the billed date sensor."""
         super().__init__(coordinator)
         self._device_type = device_type
-        self._attr_unique_id = f"billed_date_{device_type.lower().replace(' ', '_')}"
+        self._attr_unique_id = (
+            f"{account_namespace(config_entry)}_billed_date_{slug(device_type)}"
+        )
         self._attr_translation_key = "last_billed_date_type"
         self._attr_translation_placeholders = {"device_type": device_type}
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, config_entry.entry_id)},
-            name=f"Ista Account {config_entry.data.get(CONF_EMAIL, '')}",
-            manufacturer=MANUFACTURER,
-            model="Ista Calista Account",
-            configuration_url="https://oficina.ista.es/GesCon/MainPageAbo.do",
-        )
+        self._attr_device_info = account_device_info(config_entry)
         _LOGGER.debug("IstaBilledDateTypeSensor initialized: %s", self.unique_id)
 
     @property

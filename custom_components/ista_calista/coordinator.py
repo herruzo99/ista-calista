@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 from datetime import date, timedelta
 from typing import TypedDict
+
+import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -23,6 +26,8 @@ from pycalista_ista import (
 )
 
 from .const import (
+    CONF_ACCOUNT_ID,
+    CONF_ACCOUNT_LABEL,
     CONF_OFFSET,
     CONF_UPDATE_INTERVAL,
     DEFAULT_UPDATE_INTERVAL_HOURS,
@@ -30,6 +35,11 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _descending_date(value: date | None) -> int:
+    """Sort key: newest date first, None last."""
+    return -value.toordinal() if value is not None else 0
 
 
 class IstaDeviceData(TypedDict):
@@ -50,10 +60,16 @@ class IstaCoordinator(DataUpdateCoordinator[IstaDeviceData]):
         hass: HomeAssistant,
         config_entry: ConfigEntry,
         ista: PyCalistaIsta,
+        session: aiohttp.ClientSession | None = None,
     ) -> None:
         """Initialize ista Calista data update coordinator."""
         self.ista: PyCalistaIsta = ista
         self.config_entry = config_entry
+        # The private session of this entry, when the entry owns one.
+        self.session: aiohttp.ClientSession | None = session
+        # Portal property of this entry. Never logged.
+        self.account_id: str | None = config_entry.data.get(CONF_ACCOUNT_ID)
+        self.account_label: str | None = config_entry.data.get(CONF_ACCOUNT_LABEL)
 
         update_interval_hours = config_entry.options.get(
             CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_HOURS
@@ -150,31 +166,40 @@ class IstaCoordinator(DataUpdateCoordinator[IstaDeviceData]):
 
         # Merge strategy: Use XLS as base (full history), but update with data from the list (which has IDs)
         # Use a more robust key to avoid collisions with null invoice numbers
-        def _get_inv_key(i):
+        def _get_inv_key(i: Invoice) -> tuple:
             return (i.invoice_number, i.invoice_date, i.device_type, i.amount)
 
+        def _amounts_match(a: float | None, b: float | None) -> bool:
+            """Compare two optional amounts; None only matches None."""
+            if a is None or b is None:
+                return a is None and b is None
+            return abs(a - b) < 0.01
+
         merged_invoices: dict[tuple, Invoice] = {}
-        
+
         # Add XLS ones first (full history/metadata)
         for inv in invoices_xls:
             merged_invoices[_get_inv_key(inv)] = inv
-            
+
         # Update/Add detailed ones (they have invoice_id)
         for inv in invoices_list:
             key = _get_inv_key(inv)
             if key in merged_invoices:
                 existing = merged_invoices[key]
-                from dataclasses import replace
                 merged_invoices[key] = replace(existing, invoice_id=inv.invoice_id)
             else:
                 # If exact match fails, try matching by (date, type, amount) if invoice_number is None
                 if inv.invoice_number is None:
                     match_found = False
                     for existing_key, existing_inv in merged_invoices.items():
-                        if (existing_inv.invoice_date == inv.invoice_date and 
-                            existing_inv.device_type == inv.device_type and 
-                            abs(existing_inv.amount - inv.amount) < 0.01):
-                            merged_invoices[existing_key] = replace(existing_inv, invoice_id=inv.invoice_id)
+                        if (
+                            existing_inv.invoice_date == inv.invoice_date
+                            and existing_inv.device_type == inv.device_type
+                            and _amounts_match(existing_inv.amount, inv.amount)
+                        ):
+                            merged_invoices[existing_key] = replace(
+                                existing_inv, invoice_id=inv.invoice_id
+                            )
                             match_found = True
                             break
                     if not match_found:
@@ -182,7 +207,11 @@ class IstaCoordinator(DataUpdateCoordinator[IstaDeviceData]):
                 else:
                     merged_invoices[key] = inv
 
-        invoices = list(merged_invoices.values())
+        # Newest first. An invoice without a date goes last.
+        invoices = sorted(
+            merged_invoices.values(),
+            key=lambda i: (i.invoice_date is None, _descending_date(i.invoice_date)),
+        )
 
         if is_initial_fetch:
             if not new_devices_history:

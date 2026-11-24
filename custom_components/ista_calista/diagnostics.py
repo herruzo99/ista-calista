@@ -11,6 +11,7 @@ from homeassistant.const import CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 
 from . import IstaConfigEntry
+from .const import CONF_ACCOUNT_LABEL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,6 +25,10 @@ async def async_get_config_entry_diagnostics(
 
     redacted_data: dict[str, Any] = {**entry.data}
     redacted_data[CONF_PASSWORD] = "**REDACTED**"
+    # The property label is user-facing and can be an address, so it is
+    # redacted in diagnostics unless a user asks for it explicitly.
+    if CONF_ACCOUNT_LABEL in redacted_data:
+        redacted_data[CONF_ACCOUNT_LABEL] = "**REDACTED**"
 
     last_update_iso = None
     if coordinator.last_update_success and coordinator.data:

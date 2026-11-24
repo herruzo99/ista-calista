@@ -22,6 +22,13 @@ CONF_LOG_LEVEL: Final[str] = "log_level"
 CONF_SEASON_START_MONTH: Final[str] = "season_start_month"
 CONF_SEASON_START_DAY: Final[str] = "season_start_day"
 CONF_SEASON_START: Final[str] = "season_start"
+CONF_ACCOUNT_ID: Final[str] = "account_id"
+CONF_ACCOUNT_LABEL: Final[str] = "account_label"
+
+# --- Multi-property support ---
+# Every config entry owns one portal property. Entries made before 0.10.0 have
+# no account_id in their data and are resolved once during setup.
+EXPERIMENTAL_MULTI_PROPERTY: Final[bool] = True
 
 # --- Defaults ---
 DEFAULT_UPDATE_INTERVAL_HOURS: Final[int] = 24  # Default update interval

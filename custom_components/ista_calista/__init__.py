@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Final
+import os
+from collections.abc import Iterator
+from functools import partial
+from typing import TYPE_CHECKING, Any, Final
 
+import aiohttp
 import voluptuous as vol
 
 from homeassistant.components.recorder import get_instance  # type: ignore[attr-defined]
@@ -13,12 +17,13 @@ from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import (
     ConfigEntryAuthFailed,
+    ConfigEntryError,
     ConfigEntryNotReady,
     ServiceValidationError,
 )
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.typing import ConfigType
 from pycalista_ista import (
@@ -29,6 +34,8 @@ from pycalista_ista import (
 )
 
 from .const import (
+    CONF_ACCOUNT_ID,
+    CONF_ACCOUNT_LABEL,
     CONF_LOG_LEVEL,
     DEFAULT_LOG_LEVEL,
     DOMAIN,
@@ -48,22 +55,219 @@ MODEL_TO_KEY_MAP: Final[dict[str, str]] = {
     "Heating Meter": "heating",
 }
 
+# One private session per config entry. The library only closes sessions that it
+# created itself, so this integration closes the session it creates.
+SESSION_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30)
+
+SERVICE_DOWNLOAD_INVOICE: Final[str] = "download_invoice"
+SERVICE_GET_INVOICES: Final[str] = "get_invoices"
+
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+if TYPE_CHECKING:
+    from pycalista_ista import Invoice
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the ista Calista component."""
     hass.data.setdefault(DOMAIN, {})
+    # Services are registered once for the domain, not once per config entry.
+    _async_register_services(hass)
     return True
+
+
+def _async_register_services(hass: HomeAssistant) -> None:
+    """Register the domain services exactly once."""
+    if hass.services.has_service(DOMAIN, SERVICE_DOWNLOAD_INVOICE):
+        return
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_DOWNLOAD_INVOICE,
+        partial(_async_handle_download_invoice, hass),
+        schema=vol.Schema({vol.Required("invoice_id"): cv.string}),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_INVOICES,
+        partial(_async_handle_get_invoices, hass),
+        supports_response=SupportsResponse.ONLY,
+    )
+
+
+def _iter_coordinators(hass: HomeAssistant) -> Iterator[IstaCoordinator]:
+    """Yield the coordinator of every loaded entry."""
+    for value in list(hass.data.get(DOMAIN, {}).values()):
+        if isinstance(value, IstaCoordinator):
+            yield value
+
+
+def _find_invoice(
+    hass: HomeAssistant, invoice_id: str
+) -> tuple[IstaCoordinator | None, "Invoice | None"]:
+    """Return the coordinator that owns an invoice ID, and the invoice.
+
+    The invoice ID is opaque and belongs to one property, so the search is
+    per entry: an entry only ever downloads through its own client.
+    """
+    for coordinator in _iter_coordinators(hass):
+        data = coordinator.data or {}
+        for invoice in data.get("invoices", []):
+            if invoice.invoice_id == invoice_id:
+                return coordinator, invoice
+    return None, None
+
+
+def _invoice_identity(coordinator: IstaCoordinator) -> dict[str, Any]:
+    """Return the entry identity fields added to service responses."""
+    entry = coordinator.config_entry
+    return {
+        "entry_id": entry.entry_id,
+        "account_id": entry.data.get(CONF_ACCOUNT_ID),
+        "account_label": entry.data.get(CONF_ACCOUNT_LABEL),
+        "email": entry.data.get(CONF_EMAIL),
+    }
+
+
+async def _async_handle_download_invoice(
+    hass: HomeAssistant, call: ServiceCall
+) -> dict[str, str | None]:
+    """Download a specific invoice by ID."""
+    invoice_id = call.data["invoice_id"]
+    _LOGGER.debug("Service called: download_invoice")
+
+    coordinator, invoice = _find_invoice(hass, invoice_id)
+    if coordinator is None or invoice is None:
+        raise ServiceValidationError(
+            f"Invoice with ID {invoice_id} not found in the local cache. "
+            "Please run 'Get invoices' first."
+        )
+
+    try:
+        content = await coordinator.ista.get_invoice_pdf(invoice_id)
+    except (IstaApiError, IstaConnectionError) as err:
+        raise ServiceValidationError(
+            f"Failed to download invoice PDF for ID {invoice_id}: {err}"
+        ) from err
+
+    date_str = (
+        invoice.invoice_date.strftime("%Y%m%d")
+        if invoice.invoice_date
+        else "unknown_date"
+    )
+    device_type_str = (
+        invoice.device_type.replace(" ", "_").lower() if invoice.device_type else "invoice"
+    )
+    filename = f"ista_{device_type_str}_{date_str}.pdf"
+
+    base_path = hass.config.path("www")
+    if not os.path.exists(base_path):
+        await hass.async_add_executor_job(
+            partial(os.makedirs, base_path, mode=0o777, exist_ok=True)
+        )
+
+    filepath = os.path.join(base_path, filename)
+
+    def save_file() -> None:
+        with open(filepath, "wb") as file_handle:
+            file_handle.write(content)
+
+    await hass.async_add_executor_job(save_file)
+    _LOGGER.info("Saved invoice to %s", filepath)
+
+    return {
+        "success": "true",
+        "filename": filename,
+        "path": filepath,
+        **_invoice_identity(coordinator),
+    }
+
+
+async def _async_handle_get_invoices(
+    hass: HomeAssistant, call: ServiceCall
+) -> dict[str, list[dict[str, Any]]]:
+    """Return the invoices of all loaded entries."""
+    _LOGGER.debug("Service called: get_invoices")
+
+    seen: dict[Any, dict[str, Any]] = {}
+    for coordinator in _iter_coordinators(hass):
+        identity = _invoice_identity(coordinator)
+        data = coordinator.data or {}
+        for invoice in data.get("invoices", []):
+            record: dict[str, Any] = {
+                "invoice_id": invoice.invoice_id,
+                "invoice_number": invoice.invoice_number,
+                "device_type": invoice.device_type,
+                "amount": invoice.amount,
+                "date": invoice.invoice_date.isoformat() if invoice.invoice_date else None,
+                "period_start": (
+                    invoice.period_start.isoformat() if invoice.period_start else None
+                ),
+                "period_end": (
+                    invoice.period_end.isoformat() if invoice.period_end else None
+                ),
+                **identity,
+            }
+            # The invoice ID is unique per property; use it when the portal gave
+            # one. Without an ID, keep the pre-0.10.0 key.
+            key: Any = (
+                ("id", invoice.invoice_id)
+                if invoice.invoice_id
+                else (
+                    "row",
+                    invoice.invoice_number,
+                    record["date"],
+                    invoice.device_type,
+                    invoice.amount,
+                )
+            )
+            seen.setdefault(key, record)
+
+    invoices_list = sorted(
+        seen.values(), key=lambda item: item["date"] or "", reverse=True
+    )
+    _LOGGER.debug("Found %d invoices", len(invoices_list))
+    return {"invoices": invoices_list}
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: IstaConfigEntry) -> bool:
     """Set up ista Calista from a config entry."""
     _LOGGER.debug("Setting up config entry: %s", entry.entry_id)
-    session = async_get_clientsession(hass)
-    ista = PyCalistaIsta(entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD], session)
+    hass.data.setdefault(DOMAIN, {})
+    _async_register_services(hass)
 
-    # Set log level for the library and the integration based on user options
+    # A private session per entry: two properties must never share cookies.
+    session = async_create_clientsession(hass, timeout=SESSION_TIMEOUT)
+    try:
+        ista = await _async_create_client(hass, entry, session)
+        coordinator = IstaCoordinator(hass, entry, ista, session=session)
+        entry.runtime_data = coordinator
+        hass.data[DOMAIN][entry.entry_id] = coordinator
+
+        await coordinator.async_config_entry_first_refresh()
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except (ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady):
+        # Do not keep the private session or the coordinator of a failed entry.
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+        await session.close()
+        raise
+    except Exception as err:
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+        await session.close()
+        _LOGGER.exception("Unexpected error during ista Calista setup")
+        raise ConfigEntryNotReady(
+            f"Unexpected error during setup: {err}"
+        ) from err
+
+    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+
+    _LOGGER.debug("Finished setting up config entry: %s", entry.entry_id)
+    return True
+
+
+def _async_apply_log_level(entry: IstaConfigEntry, client: PyCalistaIsta) -> None:
+    """Apply the configured log level to the library and the integration."""
     log_level_str = entry.options.get(CONF_LOG_LEVEL, DEFAULT_LOG_LEVEL).upper()
     if log_level_str not in LOG_LEVELS:
         _LOGGER.warning(
@@ -73,10 +277,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: IstaConfigEntry) -> bool
         )
         log_level_str = DEFAULT_LOG_LEVEL
     try:
-        # Set log level for the underlying library
-        ista.set_log_level(log_level_str)
-
-        # Set log level for the integration's custom component namespace
+        client.set_log_level(log_level_str)
         integration_logger = logging.getLogger(__name__.split(".")[0])
         level = logging.getLevelName(log_level_str)
         integration_logger.setLevel(level)
@@ -85,154 +286,115 @@ async def async_setup_entry(hass: HomeAssistant, entry: IstaConfigEntry) -> bool
         # This should not happen with the SelectSelector, but is a safeguard.
         _LOGGER.error("Failed to set log level: %s", err)
 
+
+async def _async_login(client: PyCalistaIsta, entry: IstaConfigEntry) -> None:
+    """Log in to the portal for one entry."""
+    email = entry.data[CONF_EMAIL]
     try:
-        _LOGGER.debug(
-            "Attempting to log in to Ista Calista API for account: %s",
-            entry.data[CONF_EMAIL],
-        )
-        await ista.login()
-        _LOGGER.info("Successfully logged in for account %s", entry.data[CONF_EMAIL])
+        _LOGGER.debug("Attempting to log in to Ista Calista API.")
+        await client.login()
+        _LOGGER.info("Successfully logged in for account %s", email)
     except IstaLoginError as err:
-        _LOGGER.warning("Authentication failed for %s", entry.data[CONF_EMAIL])
+        _LOGGER.warning("Authentication failed for %s", email)
         raise ConfigEntryAuthFailed(
             translation_domain=DOMAIN,
             translation_key="authentication_exception",
-            translation_placeholders={CONF_EMAIL: entry.data[CONF_EMAIL]},
+            translation_placeholders={CONF_EMAIL: email},
         ) from err
     except (IstaConnectionError, IstaApiError) as err:
         _LOGGER.error("Failed to connect to Ista Calista API: %s", err)
         raise ConfigEntryNotReady(
             f"Failed to connect to Ista Calista API: {err}"
         ) from err
-    except Exception as err:
-        _LOGGER.exception("Unexpected error during ista Calista setup")
-        raise ConfigEntryNotReady(f"Unexpected error during setup: {err}") from err
 
-    coordinator = IstaCoordinator(hass, entry, ista)
-    entry.runtime_data = coordinator
-    hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    await coordinator.async_config_entry_first_refresh()
+async def _async_create_client(
+    hass: HomeAssistant, entry: IstaConfigEntry, session: aiohttp.ClientSession
+) -> PyCalistaIsta:
+    """Create and log in the client of one entry, resolving legacy entries."""
+    email = entry.data[CONF_EMAIL]
+    password = entry.data[CONF_PASSWORD]
+    account_id = entry.data.get(CONF_ACCOUNT_ID)
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    if account_id is not None:
+        client = PyCalistaIsta(email, password, session, account_id=account_id)
+        _async_apply_log_level(entry, client)
+        await _async_login(client, entry)
+        return client
 
-    # Register services
-    async def async_download_invoice(call: ServiceCall) -> dict[str, str]:
-        """Download a specific invoice by ID."""
-        invoice_id = call.data["invoice_id"]
+    # Legacy (pre-0.10.0) entry: resolve the property once, then keep it.
+    client = PyCalistaIsta(email, password, session)
+    _async_apply_log_level(entry, client)
+    await _async_login(client, entry)
 
-        _LOGGER.debug(
-            "Service called: download_invoice for invoice_id=%s", invoice_id
+    try:
+        accounts = list(await client.list_accounts())
+    except (IstaLoginError, IstaConnectionError, IstaApiError) as err:
+        raise ConfigEntryNotReady(
+            f"Failed to read the properties of the account: {err}"
+        ) from err
+
+    if not accounts:
+        raise ConfigEntryError(
+            f"No property was found for {email}. Check the ista Calista portal "
+            "account, then reconfigure the integration."
+        )
+    if len(accounts) > 1:
+        _LOGGER.warning(
+            "Account %s has several properties. Reconfigure required.", email
+        )
+        raise ConfigEntryError(
+            f"The account {email} has several properties. Reconfigure the "
+            "integration and select one property for this entry."
         )
 
-        # Find invoice object to get date for filename
-        invoice = None
-        for coord in hass.data[DOMAIN].values():
-            if not coord.data or "invoices" not in coord.data:
-                continue
-            invoice = next(
-                (i for i in coord.data["invoices"] if i.invoice_id == invoice_id),
-                None,
+    _async_persist_account(hass, entry, accounts[0])
+    return client
+
+
+def _async_persist_account(
+    hass: HomeAssistant, entry: IstaConfigEntry, account: Any
+) -> None:
+    """Store the resolved property in a legacy entry."""
+    email = entry.data[CONF_EMAIL]
+    account_id = str(account.account_id)
+    label = getattr(account, "label", None)
+    unique_id = f"{email.lower()}:{account_id}"
+
+    for other in hass.config_entries.async_entries(DOMAIN):
+        if other.entry_id != entry.entry_id and other.unique_id == unique_id:
+            raise ConfigEntryError(
+                "Another config entry already uses this property. Reconfigure "
+                "this entry and select a different property."
             )
-            if invoice:
-                break
 
-        if not invoice:
-            raise ServiceValidationError(
-                f"Invoice with ID {invoice_id} not found in the local cache. "
-                "Please run 'Get invoices' first."
-            )
+    data = {**entry.data, CONF_ACCOUNT_ID: account_id}
+    if label:
+        data[CONF_ACCOUNT_LABEL] = label
+    title = f"{email} \u2014 {label}" if label else email
 
-        try:
-            # We use the 'ista' client from the first coordinator found
-            content = await coordinator.ista.get_invoice_pdf(invoice_id)
-        except (IstaApiError, IstaConnectionError) as err:
-            raise ServiceValidationError(
-                f"Failed to download invoice PDF for ID {invoice_id}: {err}"
-            ) from err
-
-        date_str = (
-            invoice.invoice_date.strftime("%Y%m%d")
-            if invoice and invoice.invoice_date
-            else "unknown_date"
-        )
-        device_type_str = (
-            invoice.device_type.replace(' ', '_').lower()
-            if invoice and invoice.device_type
-            else "invoice"
-        )
-        filename = f"ista_{device_type_str}_{date_str}.pdf"
-
-        # Save to www directory
-        base_path = hass.config.path("www")
-        import os
-        if not os.path.exists(base_path):
-             os.makedirs(base_path)
-             
-        filepath = os.path.join(base_path, filename)
-        
-        def save_file():
-            with open(filepath, "wb") as f:
-                f.write(content)
-        
-        await hass.async_add_executor_job(save_file)
-        _LOGGER.info("Saved invoice to %s", filepath)
-        
-        return {
-            "success": "true",
-            "filename": filename,
-            "path": filepath,
-        }
-
-    hass.services.async_register(
-        DOMAIN,
-        "download_invoice",
-        async_download_invoice,
-        schema=vol.Schema(
-            {
-                vol.Required("invoice_id"): cv.string,
-            }
-        ),
-        supports_response=SupportsResponse.ONLY,
+    hass.config_entries.async_update_entry(
+        entry, data=data, unique_id=unique_id, title=title
     )
+    _LOGGER.info("Resolved the property of legacy entry %s", entry.entry_id)
 
-    async def async_get_invoices(call: ServiceCall) -> dict[str, list[dict]]:
-        """Return a detailed list of invoices."""
-        _LOGGER.debug("Service called: get_invoices")
-        all_invoices: list[dict] = []
-        for coord in hass.data[DOMAIN].values():
-            if coord.data and "invoices" in coord.data:
-                for inv in coord.data["invoices"]:
-                    all_invoices.append({
-                        "invoice_id": inv.invoice_id,
-                        "invoice_number": inv.invoice_number,
-                        "device_type": inv.device_type,
-                        "amount": inv.amount,
-                        "date": inv.invoice_date.isoformat() if inv.invoice_date else None,
-                        "period_start": inv.period_start.isoformat() if inv.period_start else None,
-                        "period_end": inv.period_end.isoformat() if inv.period_end else None,
-                    })
-        
-        # Deduplicate if multiple coords have same data
-        if not all_invoices:
-             return {"invoices": []}
 
-        unique_invoices = {
-            (i["invoice_number"], i["date"], i["device_type"], i["amount"]): i for i in all_invoices
-        }.values()
-        invoices_list = sorted(list(unique_invoices), key=lambda x: x["date"] or "", reverse=True)
-        
-        _LOGGER.debug("Found %d invoices", len(invoices_list))
-        return {"invoices": invoices_list}
+async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+    """Migrate an old config entry to the current version.
 
-    hass.services.async_register(
-        DOMAIN, "get_invoices", async_get_invoices,
-        supports_response=True
+    Version 1 entries hold no property (`account_id`). The migration itself is
+    offline and only bumps the version: the property is resolved during setup,
+    where a portal login is available.
+    """
+    _LOGGER.debug(
+        "Migrating config entry %s from version %s",
+        config_entry.entry_id,
+        config_entry.version,
     )
-
-    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
-
-    _LOGGER.debug("Finished setting up config entry: %s", entry.entry_id)
+    if config_entry.version > 2:
+        return False
+    if config_entry.version == 1:
+        hass.config_entries.async_update_entry(config_entry, version=2)
     return True
 
 
@@ -248,6 +410,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: IstaConfigEntry) -> boo
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         coordinator = entry.runtime_data
         await coordinator.ista.close()
+        if coordinator.session is not None:
+            # The session belongs to this entry only. Never touch a session that
+            # Home Assistant owns.
+            await coordinator.session.close()
         hass.data[DOMAIN].pop(entry.entry_id, None)
         _LOGGER.info("Successfully unloaded config entry: %s", entry.entry_id)
 

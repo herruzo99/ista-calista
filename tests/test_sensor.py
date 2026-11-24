@@ -11,6 +11,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.ista_calista.const import DOMAIN
 
 from .const import (
+    MOCK_ACCOUNT,
     MOCK_BILLED_READINGS,
     MOCK_CONFIG,
     MOCK_DEVICE_NO_LOCATION,
@@ -18,6 +19,9 @@ from .const import (
     MOCK_GENERIC_DEVICE,
     MOCK_INVOICES,
 )
+
+# Account-level unique IDs carry the property namespace of the entry.
+ACCOUNT_NAMESPACE = f"{MOCK_CONFIG['email']}:{MOCK_ACCOUNT.account_id}"
 
 
 async def test_sensor_creation_and_state(
@@ -205,7 +209,7 @@ async def test_account_sensor_creation(
 
     entity_registry = er.async_get(hass)
     entity_id = entity_registry.async_get_entity_id(
-        "sensor", DOMAIN, f"{MOCK_CONFIG['email']}_latest_invoice_amount"
+        "sensor", DOMAIN, f"{ACCOUNT_NAMESPACE}_latest_invoice_amount"
     )
     assert entity_id is not None
 
@@ -228,7 +232,7 @@ async def test_account_sensor_no_invoices(
 
     entity_registry = er.async_get(hass)
     entity_id = entity_registry.async_get_entity_id(
-        "sensor", DOMAIN, f"{MOCK_CONFIG['email']}_latest_invoice_amount"
+        "sensor", DOMAIN, f"{ACCOUNT_NAMESPACE}_latest_invoice_amount"
     )
     assert entity_id is not None
 

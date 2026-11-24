@@ -10,7 +10,9 @@
             "invalid_auth": "Autenticación no válida",
             "unknown": "Error inesperado",
             "offset_too_recent": "La Fecha de Inicio de Consumo debe ser al menos un mes en el pasado.",
-            "invalid_date_format": "Formato de fecha inválido."
+            "invalid_date_format": "Formato de fecha inválido.",
+            "account_not_found": "Esa propiedad ya no aparece en esta cuenta. Reconfigura la integración y vuelve a seleccionar la propiedad.",
+            "no_accounts": "Esta cuenta no tiene ninguna propiedad. Comprueba la cuenta del portal ista Calista."
         },
         "step": {
             "user": {
@@ -54,8 +56,18 @@
                 },
                 "description": "La autenticación para {email} ha expirado. Por favor, vuelve a introducir tu contraseña para reconectar tu cuenta de ista Calista.",
                 "data_description": {
-                  "password": "Introduce la contraseña actual de tu cuenta de ista Calista asociada a {email}."
+                    "password": "Introduce la contraseña actual de tu cuenta de ista Calista asociada a {email}."
                 }
+            },
+            "select_account": {
+                "title": "Selecciona la propiedad",
+                "data": {
+                    "account_id": "Propiedad"
+                },
+                "data_description": {
+                    "account_id": "Selecciona la propiedad del portal que debe leer esta entrada. Añade la integración otra vez para cada una de las demás propiedades de la misma cuenta."
+                },
+                "description": "La cuenta {email} tiene varias propiedades. Selecciona una propiedad para esta entrada."
             }
         }
     },

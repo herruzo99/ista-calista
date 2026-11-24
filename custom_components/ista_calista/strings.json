@@ -10,7 +10,9 @@
             "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
             "unknown": "[%key:common::config_flow::error::unknown%]",
             "offset_too_recent": "Consumption Start Date must be at least one month in the past.",
-            "invalid_date_format": "Invalid date format entered."
+            "invalid_date_format": "Invalid date format entered.",
+            "account_not_found": "That property is no longer listed for this account. Reconfigure the integration and select the property again.",
+            "no_accounts": "This account has no property. Check the ista Calista portal account."
         },
         "step": {
             "user": {
@@ -54,6 +56,16 @@
                 "data_description": {
                     "password": "Enter the current password for your ista Calista account associated with {email}."
                 }
+            },
+            "select_account": {
+                "title": "Select the property",
+                "data": {
+                    "account_id": "Property"
+                },
+                "data_description": {
+                    "account_id": "Select the portal property that this entry must read. Add the integration again for each other property of the same account."
+                },
+                "description": "The account {email} holds several properties. Select one property for this entry."
             }
         }
     },

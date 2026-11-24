@@ -40,6 +40,8 @@ from pycalista_ista import (
 
 # This is the correct source for our integration's specific constants.
 from .const import (
+    CONF_ACCOUNT_ID,
+    CONF_ACCOUNT_LABEL,
     CONF_LOG_LEVEL,
     CONF_OFFSET,
     CONF_SEASON_START,
@@ -71,10 +73,26 @@ def get_min_offset_date() -> date:
     return result
 
 
+def entry_title(email: str, label: str | None) -> str:
+    """Return the config entry title of one property."""
+    return f"{email} \u2014 {label}" if label else email
+
+
+def unique_id_for(email: str, account_id: str) -> str:
+    """Return the config entry unique ID of one property."""
+    return f"{email.lower()}:{account_id}"
+
+
 class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for ista Calista."""
 
-    VERSION = 1
+    VERSION = 2
+
+    def __init__(self) -> None:
+        """Initialize the flow."""
+        self._accounts: list[Any] = []
+        self._pending_input: dict[str, Any] = {}
+        self._reconfigure_entry: ConfigEntry | None = None
 
     @staticmethod
     @callback
@@ -82,13 +100,11 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
         """Get the options flow for this handler."""
         return IstaOptionsFlowHandler()
 
-    async def _validate_user_input(self, user_input: dict[str, Any]) -> dict[str, str]:
-        """Validate user input for credentials and settings."""
-        errors: dict[str, str] = {}
-        email = user_input[CONF_EMAIL]
-        password = user_input[CONF_PASSWORD]
-        _LOGGER.debug("Starting input validation for user: %s", email)
+    # ------------------------------------------------------------------ helpers
 
+    def _validate_dates(self, user_input: dict[str, Any]) -> dict[str, str]:
+        """Validate the local settings. Does not touch the network."""
+        errors: dict[str, str] = {}
         if CONF_OFFSET in user_input:
             try:
                 offset_date = date.fromisoformat(user_input[CONF_OFFSET])
@@ -103,17 +119,39 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             except ValueError:
                 _LOGGER.warning("Validation failed: Invalid date format for offset.")
                 errors[CONF_OFFSET] = "invalid_date_format"
+        return errors
 
+    async def _validate_user_input(
+        self, user_input: dict[str, Any], account_id: str | None = None
+    ) -> dict[str, str]:
+        """Validate the credentials and read the properties of the account.
+
+        The result is ``errors``; on success ``self._accounts`` holds the
+        properties of the account.
+        """
+        errors = self._validate_dates(user_input)
+        self._accounts = []
         if errors:
             _LOGGER.debug("Input validation failed: %s", errors)
             return errors
 
+        email = user_input[CONF_EMAIL]
+        password = user_input[CONF_PASSWORD]
+        _LOGGER.debug("Starting input validation for user: %s", email)
+
         session = async_get_clientsession(self.hass)
-        ista = PyCalistaIsta(email, password, session)
+        if account_id:
+            ista = PyCalistaIsta(email, password, session, account_id=account_id)
+        else:
+            ista = PyCalistaIsta(email, password, session)
         try:
             _LOGGER.debug("Attempting to log in to Ista API to validate credentials.")
             await ista.login()
             _LOGGER.debug("Ista API login validation successful for %s.", email)
+            self._accounts = list(await ista.list_accounts())
+            _LOGGER.debug(
+                "Portal account holds %d propert(y/ies).", len(self._accounts)
+            )
         except IstaLoginError:
             _LOGGER.warning(
                 "Authentication failed during validation for user %s.", email
@@ -131,6 +169,69 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return errors
 
+    def _account_for(self, account_id: str) -> Any | None:
+        """Return the known property with this ID, if any."""
+        return next(
+            (a for a in self._accounts if a.account_id == account_id),
+            None,
+        )
+
+    def _resolve_existing_account(self, entry: ConfigEntry) -> Any | None:
+        """Return the property an entry keeps, or None when a choice is needed."""
+        account_id = entry.data.get(CONF_ACCOUNT_ID)
+        if account_id is None:
+            # A legacy entry can adopt the only property without a second form.
+            return self._accounts[0] if len(self._accounts) == 1 else None
+        return self._account_for(str(account_id))
+
+    def _has_conflict(
+        self,
+        email: str,
+        account_id: str,
+        ignore_entry_id: str | None = None,
+    ) -> bool:
+        """Return True when another entry already uses this property.
+
+        A legacy entry holds no property yet; it may become any property of the
+        same email, so it conflicts too.
+        """
+        email_key = email.lower()
+        for other in self._async_current_entries():
+            if other.entry_id == ignore_entry_id:
+                continue
+            if str(other.data.get(CONF_EMAIL, "")).lower() != email_key:
+                continue
+            other_account = other.data.get(CONF_ACCOUNT_ID)
+            if other_account is None or str(other_account) == account_id:
+                return True
+        return False
+
+    def _entry_data(self, account: Any) -> dict[str, Any]:
+        """Return the config entry data of one property."""
+        data = {
+            **self._pending_input,
+            CONF_ACCOUNT_ID: str(account.account_id),
+        }
+        label = getattr(account, "label", None)
+        if label:
+            data[CONF_ACCOUNT_LABEL] = label
+        return data
+
+    async def _async_create_account_entry(self, account: Any) -> ConfigFlowResult:
+        """Create the config entry of one property."""
+        email = self._pending_input[CONF_EMAIL]
+        account_id = str(account.account_id)
+        await self.async_set_unique_id(unique_id_for(email, account_id))
+        self._abort_if_unique_id_configured()
+        if self._has_conflict(email, account_id):
+            return self.async_abort(reason="already_configured")
+        return self.async_create_entry(
+            title=entry_title(email, getattr(account, "label", None)),
+            data=self._entry_data(account),
+        )
+
+    # ------------------------------------------------------------------- steps
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -143,16 +244,25 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             errors = await self._validate_user_input(user_input)
             if not errors:
-                email = user_input[CONF_EMAIL]
-                _LOGGER.info(
-                    "Validation successful. Creating config entry for %s", email
-                )
-                await self.async_set_unique_id(email.lower())
-                self._abort_if_unique_id_configured()
+                if not self._accounts:
+                    errors["base"] = "no_accounts"
+                else:
+                    self._pending_input = user_input
+                    if len(self._accounts) == 1:
+                        _LOGGER.info(
+                            "Validation successful. One property found; creating "
+                            "the config entry without an extra step."
+                        )
+                        return await self._async_create_account_entry(
+                            self._accounts[0]
+                        )
+                    _LOGGER.info(
+                        "Validation successful. Several properties found; asking "
+                        "the user to select one."
+                    )
+                    return await self.async_step_select_account()
 
-                return self.async_create_entry(title=email, data=user_input)
-
-        suggested_values = user_input or {}
+        suggested_values = dict(user_input or {})
         if CONF_OFFSET not in suggested_values:
             suggested_values[CONF_OFFSET] = get_default_offset_date()
         _LOGGER.debug("Showing user form with suggested values: %s", suggested_values)
@@ -187,10 +297,51 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_select_account(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask which portal property belongs to this entry."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            account = self._account_for(str(user_input[CONF_ACCOUNT_ID]))
+            if account is None:
+                errors["base"] = "account_not_found"
+            elif self._reconfigure_entry is not None:
+                return self._async_update_reconfigure(
+                    self._reconfigure_entry, account
+                )
+            else:
+                return await self._async_create_account_entry(account)
+
+        options = [
+            {
+                "value": str(account.account_id),
+                "label": getattr(account, "label", None) or str(account.account_id),
+            }
+            for account in self._accounts
+        ]
+        return self.async_show_form(
+            step_id="select_account",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_ACCOUNT_ID): SelectSelector(
+                        SelectSelectorConfig(
+                            options=options, mode=SelectSelectorMode.LIST
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                CONF_EMAIL: self._pending_input.get(CONF_EMAIL, "")
+            },
+        )
+
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle reconfiguration (change email, password, or start date)."""
+        """Handle reconfiguration (credentials, property, or start date)."""
         entry = self._get_reconfigure_entry()
         errors: dict[str, str] = {}
         _LOGGER.debug(
@@ -200,33 +351,35 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
         if user_input is not None:
-            errors = await self._validate_user_input(user_input)
+            errors = await self._validate_user_input(
+                user_input, account_id=entry.data.get(CONF_ACCOUNT_ID)
+            )
             if not errors:
-                new_email = user_input[CONF_EMAIL]
-                _LOGGER.info(
-                    "Reconfiguration validated. Updating entry %s for account %s.",
-                    entry.entry_id,
-                    new_email,
-                )
-                # Only check for a conflicting entry when the email (unique_id) changes.
-                if new_email.lower() != entry.unique_id:
-                    await self.async_set_unique_id(new_email.lower())
-                    self._abort_if_unique_id_configured()
-                return self.async_update_reload_and_abort(
-                    entry,
-                    title=new_email,
-                    data_updates=user_input,
-                    reason="reconfigure_successful",
-                )
+                self._pending_input = user_input
+                self._reconfigure_entry = entry
+                if not self._accounts:
+                    errors["base"] = "no_accounts"
+                else:
+                    account = self._resolve_existing_account(entry)
+                    if account is not None:
+                        return self._async_update_reconfigure(entry, account)
+                    if len(self._accounts) > 1:
+                        # A legacy entry with several properties: let the user
+                        # select the property of this entry.
+                        return await self.async_step_select_account()
+                    errors["base"] = "account_not_found"
 
-        suggested_values = user_input or {
-            CONF_EMAIL: entry.data[CONF_EMAIL],
-            CONF_OFFSET: entry.data.get(CONF_OFFSET, get_default_offset_date()),
-            CONF_SEASON_START: entry.data.get(
-                CONF_SEASON_START,
-                f"{date.today().year}-{entry.data.get(CONF_SEASON_START_MONTH, DEFAULT_SEASON_START_MONTH):02d}-{entry.data.get(CONF_SEASON_START_DAY, DEFAULT_SEASON_START_DAY):02d}",
-            ),
-        }
+        suggested_values = dict(
+            user_input
+            or {
+                CONF_EMAIL: entry.data[CONF_EMAIL],
+                CONF_OFFSET: entry.data.get(CONF_OFFSET, get_default_offset_date()),
+                CONF_SEASON_START: entry.data.get(
+                    CONF_SEASON_START,
+                    f"{date.today().year}-{entry.data.get(CONF_SEASON_START_MONTH, DEFAULT_SEASON_START_MONTH):02d}-{entry.data.get(CONF_SEASON_START_DAY, DEFAULT_SEASON_START_DAY):02d}",
+                ),
+            }
+        )
         _LOGGER.debug(
             "Showing reconfigure form with suggested values: %s", suggested_values
         )
@@ -259,11 +412,29 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={CONF_EMAIL: entry.data[CONF_EMAIL]},
         )
 
+    def _async_update_reconfigure(
+        self, entry: ConfigEntry, account: Any
+    ) -> ConfigFlowResult:
+        """Store the new identity of a reconfigured entry."""
+        email = self._pending_input[CONF_EMAIL]
+        account_id = str(account.account_id)
+        if self._has_conflict(email, account_id, ignore_entry_id=entry.entry_id):
+            return self.async_abort(reason="already_configured")
+        _LOGGER.info(
+            "Reconfiguration validated. Updating entry %s.",
+            entry.entry_id,
+        )
+        return self.async_update_reload_and_abort(
+            entry,
+            title=entry_title(email, getattr(account, "label", None)),
+            unique_id=unique_id_for(email, account_id),
+            data_updates=self._entry_data(account),
+            reason="reconfigure_successful",
+        )
+
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         """Handle initiation of re-authentication."""
-        _LOGGER.debug(
-            "Handling 'reauth' step for entry: %s", entry_data.get(CONF_EMAIL)
-        )
+        _LOGGER.debug("Handling 'reauth' step for entry.")
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
@@ -274,7 +445,7 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
         email: str = entry.data[CONF_EMAIL]
         errors: dict[str, str] = {}
         _LOGGER.debug(
-            "Handling 'reauth_confirm' step for %s. User input provided: %s",
+            "Handling 'reauth_confirm' for %s. User input provided: %s",
             email,
             user_input is not None,
         )
@@ -282,8 +453,10 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             password: str = user_input[CONF_PASSWORD]
             _LOGGER.debug("Validating new password for re-authentication.")
+            # The entry keeps its property; the client uses the same account ID.
             errors = await self._validate_user_input(
-                {CONF_EMAIL: email, CONF_PASSWORD: password}
+                {CONF_EMAIL: email, CONF_PASSWORD: password},
+                account_id=entry.data.get(CONF_ACCOUNT_ID),
             )
 
             if not errors:
