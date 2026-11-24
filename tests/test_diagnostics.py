@@ -5,9 +5,13 @@ from pytest_homeassistant_custom_component.components.diagnostics import (
     get_diagnostics_for_config_entry,
 )
 
-from custom_components.ista_calista.const import DOMAIN
+from custom_components.ista_calista.const import (
+    CONF_ACCOUNT_ID,
+    CONF_ACCOUNT_LABEL,
+    DOMAIN,
+)
 
-from .const import MOCK_CONFIG, MOCK_DEVICE_NO_HISTORY, MOCK_DEVICES
+from .const import MOCK_ACCOUNT, MOCK_CONFIG, MOCK_DEVICE_NO_HISTORY, MOCK_DEVICES
 
 
 async def test_diagnostics(
@@ -80,3 +84,34 @@ async def test_diagnostics_device_with_no_history(
 
     assert device_summary["history_count"] == 0
     assert device_summary["last_reading_date"] is None
+
+
+async def test_diagnostics_redact_property_label(
+    recorder_mock,
+    hass,
+    hass_client,
+    mock_pycalista,
+    enable_custom_integrations,
+):
+    """The property label can be an address, so diagnostics redact it."""
+    mock_pycalista.get_devices_history.return_value = MOCK_DEVICES
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        version=2,
+        unique_id=f"{MOCK_CONFIG['email']}:{MOCK_ACCOUNT.account_id}",
+        data={
+            **MOCK_CONFIG,
+            CONF_ACCOUNT_ID: MOCK_ACCOUNT.account_id,
+            CONF_ACCOUNT_LABEL: MOCK_ACCOUNT.label,
+        },
+    )
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
+
+    assert diagnostics["config_entry"]["data"][CONF_ACCOUNT_LABEL] == "**REDACTED**"
+    assert diagnostics["config_entry"]["data"][CONF_ACCOUNT_ID] == (
+        MOCK_ACCOUNT.account_id
+    )

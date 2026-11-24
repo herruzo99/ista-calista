@@ -26,8 +26,6 @@ from custom_components.ista_calista import async_migrate_entry
 from custom_components.ista_calista.const import (
     CONF_ACCOUNT_ID,
     CONF_ACCOUNT_LABEL,
-    CONF_OFFSET,
-    CONF_SEASON_START,
     DOMAIN,
 )
 
@@ -36,7 +34,6 @@ from .const import (
     MOCK_ACCOUNT_OTHER,
     MOCK_CONFIG,
     MOCK_DEVICES,
-    MOCK_INVOICES,
     SECOND_PROPERTY_DEVICES,
     RecordingSessionFactory,
 )
@@ -157,7 +154,7 @@ async def test_migrate_entry_bumps_version_without_network(
     assert migrated.data == MOCK_CONFIG
     # No login and no session: the migration is offline.
     mock_pycalista.client_class.assert_not_called()
-    mock_pycalista.session_factory.sessions == []
+    assert mock_pycalista.session_factory.sessions == []
 
 
 async def test_migrate_entry_refuses_newer_version(

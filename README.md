@@ -133,13 +133,49 @@ automation:
           message: "{{ states('sensor.kitchen_water') }} m³"
 ```
 
+## Multi-property support (experimental)
+
+One ista email can be linked to several portal properties. Each property needs
+its own integration entry.
+
+- Add the integration once per property. If the account holds one property, the
+  entry is created without an extra step. If it holds several, the form asks
+  which property the entry must read.
+- The entry title and the account device show the property label. The property
+  label can be an address.
+- Each entry has a private session, its own cookie jar and its own property
+  selection. Two properties never share a session or an invoice download.
+- `ista_calista.get_invoices` returns the `entry_id`, `account_id`,
+  `account_label` and `email` of every invoice, so you can tell properties
+  apart. `ista_calista.download_invoice` uses the client that owns the invoice
+  ID.
+- Meter entities and their long-term statistics keep their serial based IDs.
+  Account-level entities (invoice, bill, connection, refresh) use the property
+  in their unique ID.
+
+**Experimental status: synthetic two-property tests pass; only a live
+single-property account was verified.** Two properties were tested with
+synthetic fixtures, not on the live portal. The live check covered one
+property only.
+
+Limitations of this experimental release:
+
+- Two properties that report the same meter serial number would collide on the
+  meter entity unique IDs and on the statistic IDs. No live portal showed this.
+- Existing account-level entity IDs change once after the upgrade to 0.10.0,
+  because the property is now part of their unique ID. Long-term statistics of
+  the meters do not change.
+- A version 1 entry is migrated offline. If the account holds several
+  properties, setup stops and asks for a reconfigure, because the property
+  cannot be chosen without a login.
+
 ## Known Limitations
 
 - **Spain only:** This integration connects to the Spanish ista portal (`oficina.ista.es`). Other regional portals are not supported.
 - **Polling only:** Data is not pushed in real time. The integration polls the portal on a schedule (minimum 1 hour, default 24 hours). Readings from the portal itself may be delayed by days depending on your meter type.
 - **Historical data window:** The ista portal typically retains 1–2 years of history. Data older than that cannot be retrieved.
 - **No meter control:** This is a read-only integration. It cannot submit readings or interact with your meters in any way.
-- **Single account per instance:** Each integration entry corresponds to one ista account. If you have meters under multiple accounts, add the integration again for each account.
+- **One property per entry:** Each integration entry reads one portal property. If your email holds several properties, add the integration again for each one (see below). Allow one private session and one polling cycle per entry.
 
 ## Troubleshooting
 
