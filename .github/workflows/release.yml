@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to package (for example, v0.9.2)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Build HACS release ZIP
+        run: |
+          mkdir -p dist
+          zip -r dist/ista_calista.zip custom_components/ista_calista \
+            -x "*/__pycache__/*" "*.pyc" "*.pyo"
+
+      - name: Validate release ZIP
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          archive = Path("dist/ista_calista.zip")
+          prefix = "custom_components/ista_calista/"
+          with ZipFile(archive) as zip_file:
+              names = zip_file.namelist()
+              assert f"{prefix}manifest.json" in names, "Integration manifest is missing"
+              assert all(name.startswith(prefix) for name in names), "Unexpected ZIP content"
+              assert not any(
+                  "__pycache__" in name or name.endswith((".pyc", ".pyo"))
+                  for name in names
+              ), "Generated Python files must not be released"
+          PY
+
+      - name: Upload ZIP to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$RELEASE_TAG" in
+            v*) ;;
+            *) echo "Release tag must start with 'v'" >&2; exit 1 ;;
+          esac
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/ista_calista.zip --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/ista_calista.zip \
+              --verify-tag \
+              --title "$RELEASE_TAG" \
+              --generate-notes
+          fi

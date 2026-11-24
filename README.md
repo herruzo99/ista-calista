@@ -41,8 +41,8 @@ This Home Assistant custom component integrates with the [ista Calista portal](h
     - Restart Home Assistant when prompted.
 
 2.  **Manual Installation:**
-    - Download the latest release from the [Releases](https://github.com/herruzo99/ista-calista/releases) page.
-    - Copy the `custom_components/ista_calista` directory into your Home Assistant `<config>/custom_components` folder.
+    - Download `ista_calista.zip` from the assets of the latest [Release](https://github.com/herruzo99/ista-calista/releases).
+    - Extract the archive and copy the `custom_components/ista_calista` directory into your Home Assistant `<config>/custom_components` folder.
     - Restart Home Assistant.
 
 ## Configuration
@@ -196,6 +196,12 @@ To run a specific test file:
 ```bash
 pytest tests/test_sensor.py
 ```
+
+### Releases
+
+Pushing a tag matching `v*` runs the [Release workflow](.github/workflows/release.yml). It packages `custom_components/ista_calista/` as `ista_calista.zip`, validates the archive, and uploads it to the GitHub Release. HACS is configured in `hacs.json` to download this asset, so its download counter reflects asset downloads rather than GitHub's automatic source archives.
+
+To add the ZIP to an existing release without creating a new tag, run the **Release** workflow manually from the Actions tab and enter the existing tag (for example, `v0.9.2`). Re-running it replaces the ZIP asset while preserving the release.
 
 ## Contributing
 
