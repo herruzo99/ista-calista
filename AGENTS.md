@@ -16,7 +16,8 @@ Read this guide before changing the integration. Read `../pycalista-ista/AGENTS.
 4. Preserve UTC/date distinctions. Radio `Reading.date` is UTC midnight; billed/invoice fields are `date`; HA timestamp sensors localize date-only values.
 5. Keep dynamic entity unique IDs stable. Registry duplicates can silently drop entities, especially for a second account.
 6. Preserve old and new billed-consumption XLS headers in the library. Issue `herruzo99/ista-calista#4` was caused by the portal rename.
-7. Run the full suite and Ruff before proposing a push. Current baseline: 68 tests pass and Ruff passes.
+7. Run the full suite and Ruff before proposing a push. Current baseline: 114
+   tests pass and Ruff passes (HA 2025.7.4, sibling library 0.9.4).
 8. Do not claim long-term statistics work from unit tests alone. All current statistics tests mock the recorder boundary.
 9. Do not push, tag, publish, or run a release workflow unless the owner explicitly asks.
 
@@ -403,13 +404,20 @@ Verified on 2026-11-24 at `058ed9d`:
 - Coverage with branch measurement: about **91.09%**.
 - Ruff: **passes**.
 - Nix environment: Home Assistant **2025.7.4**, Python **3.13.5**.
-- Imported library: sibling `../pycalista-ista`, version **0.9.3**.
+- Imported library: sibling `../pycalista-ista`, version **0.9.4** (`PortalAccount`,
+  `list_accounts`, `select_account`, paginated `get_invoices`).
 
 ### Local library shadowing
 
-`flake.nix` pins a Nix-built `pycalista-ista` 0.9.2, but `shellHook` prepends `../pycalista-ista` to `PYTHONPATH`. Local tests therefore use the sibling 0.9.3 work tree. CI without that sibling uses 0.9.2.
+`flake.nix` still pins a Nix-built `pycalista-ista` 0.9.2, but `shellHook`
+prepends `../pycalista-ista` to `PYTHONPATH`. Local tests therefore use the
+sibling 0.9.4 work tree. **Known mismatch (open):** CI without that sibling
+would load 0.9.2, which has no `list_accounts`, `select_account` or
+`PortalAccount`, so the integration and its config flow would fail there. The
+flake version and hash must be bumped to 0.9.4 before a release.
 
-This matters: 0.9.3 contains the billed-header fix from issue #4. Local tests and CI do not currently exercise the same library parser version.
+This matters: 0.10.0 needs 0.9.4. Until the flake pin is bumped, local tests and
+CI do not exercise the same library version.
 
 ### Test map and gaps
 
@@ -534,6 +542,15 @@ unverified.
 ### Legacy version 1 entries
 
 1. `async_migrate_entry` bumps the version to 2. It makes no network call.
+   Account-level entity unique IDs are migrated after the property is resolved,
+   because their new namespace needs the `account_id`: the pre-0.10.0 IDs
+   (`<email>_latest_invoice_amount`, `<email>_invoice_<type>`,
+   `<email>_connection_status`, `<email>_refresh`, `<email>_last_billed_date`,
+   `bill_name_<type>`, `billed_date_<type>`, `bill_<token>`) are moved in place
+   with `entity_registry.async_migrate_entries`, so the entity ID, the disabled
+   state and the history stay. A reconfigure that changes the entry identity
+   moves the stable account entities to the new namespace and removes the
+   per-invoice `bill_*` entities of the old property.
 2. Setup builds the client without `account_id`, logs in, then calls
    `list_accounts`.
 3. Exactly one property: `account_id` and `account_label` are stored, the

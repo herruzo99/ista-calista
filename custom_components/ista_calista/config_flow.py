@@ -39,6 +39,7 @@ from pycalista_ista import (
 )
 
 # This is the correct source for our integration's specific constants.
+from .account import async_migrate_account_entities
 from .const import (
     CONF_ACCOUNT_ID,
     CONF_ACCOUNT_LABEL,
@@ -144,11 +145,14 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
         # not share cookies. The library does not close an injected session, so
         # this flow closes its own in the `finally` block.
         session = async_create_clientsession(self.hass, timeout=SESSION_TIMEOUT)
-        if account_id:
-            ista = PyCalistaIsta(email, password, session, account_id=account_id)
-        else:
-            ista = PyCalistaIsta(email, password, session)
+        ista: PyCalistaIsta | None = None
         try:
+            # The constructor can raise (empty password). It stays inside the
+            # try so that the session is always detached.
+            if account_id:
+                ista = PyCalistaIsta(email, password, session, account_id=account_id)
+            else:
+                ista = PyCalistaIsta(email, password, session)
             _LOGGER.debug("Attempting to log in to Ista API to validate credentials.")
             await ista.login()
             _LOGGER.debug("Ista API login validation successful for %s.", email)
@@ -168,7 +172,8 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             _LOGGER.exception("Unexpected exception during validation for %s", email)
             errors["base"] = "unknown"
         finally:
-            await ista.close()
+            if ista is not None:
+                await ista.close()
             # detach(), not close(): a clientsession of async_create_clientsession
             # has a close() that only reports usage.
             session.detach()
@@ -183,9 +188,11 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             None,
         )
 
-    def _resolve_existing_account(self, entry: ConfigEntry) -> Any | None:
+    def _resolve_existing_account(
+        self, entry: ConfigEntry, allow_stored: bool = True
+    ) -> Any | None:
         """Return the property an entry keeps, or None when a choice is needed."""
-        account_id = entry.data.get(CONF_ACCOUNT_ID)
+        account_id = entry.data.get(CONF_ACCOUNT_ID) if allow_stored else None
         if account_id is None:
             # A legacy entry can adopt the only property without a second form.
             return self._accounts[0] if len(self._accounts) == 1 else None
@@ -315,7 +322,7 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             if account is None:
                 errors["base"] = "account_not_found"
             elif self._reconfigure_entry is not None:
-                return self._async_update_reconfigure(
+                return await self._async_update_reconfigure(
                     self._reconfigure_entry, account
                 )
             else:
@@ -358,8 +365,15 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
         if user_input is not None:
+            email_changed = (
+                user_input[CONF_EMAIL].lower()
+                != str(entry.data[CONF_EMAIL]).lower()
+            )
+            # The stored property belongs to the old login. A new email must be
+            # validated without it, then choose one of its own properties.
             errors = await self._validate_user_input(
-                user_input, account_id=entry.data.get(CONF_ACCOUNT_ID)
+                user_input,
+                account_id=None if email_changed else entry.data.get(CONF_ACCOUNT_ID),
             )
             if not errors:
                 self._pending_input = user_input
@@ -367,13 +381,17 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
                 if not self._accounts:
                     errors["base"] = "no_accounts"
                 else:
-                    account = self._resolve_existing_account(entry)
+                    account = self._resolve_existing_account(
+                        entry, allow_stored=not email_changed
+                    )
                     if account is not None:
-                        return self._async_update_reconfigure(entry, account)
+                        return await self._async_update_reconfigure(entry, account)
                     if len(self._accounts) > 1:
-                        # A legacy entry with several properties: let the user
-                        # select the property of this entry.
+                        # Several properties: let the user select the property
+                        # of this entry.
                         return await self.async_step_select_account()
+                    # The entry keeps a property that the account no longer
+                    # lists, and the email did not change.
                     errors["base"] = "account_not_found"
 
         suggested_values = dict(
@@ -419,7 +437,7 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={CONF_EMAIL: entry.data[CONF_EMAIL]},
         )
 
-    def _async_update_reconfigure(
+    async def _async_update_reconfigure(
         self, entry: ConfigEntry, account: Any
     ) -> ConfigFlowResult:
         """Store the new identity of a reconfigured entry."""
@@ -431,6 +449,18 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             "Reconfiguration validated. Updating entry %s.",
             entry.entry_id,
         )
+        # The account entities follow the new identity: stable ones move in
+        # place, per-invoice entities of the old property are removed.
+        old_namespace = entry.unique_id or entry.data.get(CONF_EMAIL, "").lower()
+        new_namespace = unique_id_for(email, account_id)
+        if old_namespace != new_namespace:
+            await async_migrate_account_entities(
+                self.hass,
+                entry,
+                old_namespace,
+                new_namespace,
+                drop_old_bills=True,
+            )
         return self.async_update_reload_and_abort(
             entry,
             title=entry_title(email, getattr(account, "label", None)),
@@ -460,13 +490,26 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             password: str = user_input[CONF_PASSWORD]
             _LOGGER.debug("Validating new password for re-authentication.")
-            # The entry keeps its property; the client uses the same account ID.
+            # Do not force the stored property: it can be gone. Authenticate
+            # first, then compare the stored property with the current list.
             errors = await self._validate_user_input(
-                {CONF_EMAIL: email, CONF_PASSWORD: password},
-                account_id=entry.data.get(CONF_ACCOUNT_ID),
+                {CONF_EMAIL: email, CONF_PASSWORD: password}, account_id=None
             )
 
             if not errors:
+                stored_id = entry.data.get(CONF_ACCOUNT_ID)
+                if stored_id is not None and self._account_for(str(stored_id)) is None:
+                    # The property is no longer linked: a password cannot repair
+                    # that, so ask for a reconfigure instead of retrying forever.
+                    _LOGGER.warning(
+                        "The stored property of entry %s is no longer linked.",
+                        entry.entry_id,
+                    )
+                    return self.async_abort(reason="reconfigure_required")
+                if stored_id is None and len(self._accounts) > 1:
+                    # A legacy entry with several properties cannot be resolved
+                    # without a choice.
+                    return self.async_abort(reason="reconfigure_required")
                 _LOGGER.info("Re-authentication successful for %s.", email)
                 return self.async_update_reload_and_abort(
                     entry,

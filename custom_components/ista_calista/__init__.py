@@ -45,6 +45,7 @@ from .const import (
     PLATFORMS,
     SESSION_TIMEOUT,
 )
+from .account import async_migrate_account_entities
 from .coordinator import IstaCoordinator
 
 type IstaConfigEntry = ConfigEntry[IstaCoordinator]
@@ -425,6 +426,29 @@ async def _async_login(client: PyCalistaIsta, entry: IstaConfigEntry) -> None:
         ) from err
 
 
+async def _async_property_is_missing(
+    entry: IstaConfigEntry, session: aiohttp.ClientSession
+) -> bool:
+    """Return True when the account no longer lists the stored property.
+
+    A login without ``account_id`` is used, so the check is about the property
+    list only. Any error here means "cannot classify", and the caller keeps the
+    transient retry path.
+    """
+    account_id = entry.data.get(CONF_ACCOUNT_ID)
+    if account_id is None:
+        return False
+    probe = PyCalistaIsta(entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD], session)
+    try:
+        await probe.login()
+        accounts = list(await probe.list_accounts())
+    except (IstaLoginError, IstaConnectionError, IstaApiError):
+        return False
+    finally:
+        await probe.close()
+    return str(account_id) not in {str(account.account_id) for account in accounts}
+
+
 async def _async_create_client(
     hass: HomeAssistant, entry: IstaConfigEntry, session: aiohttp.ClientSession
 ) -> PyCalistaIsta:
@@ -436,7 +460,25 @@ async def _async_create_client(
     if account_id is not None:
         client = PyCalistaIsta(email, password, session, account_id=account_id)
         _async_apply_log_level(entry, client)
-        await _async_login(client, entry)
+        try:
+            await _async_login(client, entry)
+        except ConfigEntryNotReady as err:
+            # The login can fail because the stored property is no longer
+            # linked. Check that before this becomes a permanent retry loop.
+            if await _async_property_is_missing(entry, session):
+                _LOGGER.warning(
+                    "The stored property of entry %s is no longer linked to the "
+                    "account. Reconfigure required.",
+                    entry.entry_id,
+                )
+                raise ConfigEntryError(
+                    "The property of this entry is no longer linked to the "
+                    f"account {email}. Reconfigure the integration and select a "
+                    "property."
+                ) from err
+            raise
+        # Safe on every load: only old IDs are matched.
+        await async_migrate_account_entities(hass, entry, email.lower(), entry.unique_id or entry.entry_id)
         return client
 
     # Legacy (pre-0.10.0) entry: resolve the property once, then keep it.
@@ -480,7 +522,11 @@ async def _async_create_client(
             f"Failed to select the property of the account: {err}"
         ) from err
 
+    old_unique_id = entry.unique_id or email.lower()
     _async_persist_account(hass, entry, accounts[0])
+    await async_migrate_account_entities(
+        hass, entry, old_unique_id, entry.unique_id or entry.entry_id
+    )
     return client
 
 

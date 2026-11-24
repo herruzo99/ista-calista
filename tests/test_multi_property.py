@@ -22,7 +22,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
-from pycalista_ista import Invoice
+from pycalista_ista import Invoice, IstaApiError, IstaConnectionError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ista_calista import async_migrate_entry
@@ -37,6 +37,7 @@ from .const import (
     MOCK_ACCOUNT_OTHER,
     MOCK_CONFIG,
     MOCK_DEVICES,
+    MOCK_INVOICES,
     SECOND_PROPERTY_DEVICES,
     RecordingSessionFactory,
 )
@@ -92,6 +93,8 @@ def two_properties():
     """Patch the library with one client and one session per property."""
     clients: dict[str, MagicMock] = {}
     sessions = RecordingSessionFactory()
+    # Behaviour set before setup: key -> [(attribute, value), ...].
+    behaviour: dict[str, list[tuple[str, object]]] = {}
 
     def _factory(
         email: str,
@@ -123,10 +126,13 @@ def two_properties():
         client.get_invoice_pdf = AsyncMock(return_value=b"fake pdf content")
         client.session = session
         client.account_id = account_id
+        for attribute, value in behaviour.get(account_id or "legacy", []):
+            setattr(client, attribute, value)
         clients[account_id or "legacy"] = client
         return client
 
     client_class = MagicMock(side_effect=_factory)
+    client_class.behaviour = behaviour
     with (
         patch("custom_components.ista_calista.PyCalistaIsta", new=client_class),
         patch(
@@ -392,6 +398,8 @@ async def test_reauth_keeps_the_property(
     """Reauthentication uses the account ID of the entry."""
     entry = _entry(PROPERTY_TWO, MOCK_ACCOUNT_OTHER.label, NAMESPACE_TWO)
     entry.add_to_hass(hass)
+    # The account still lists the property of this entry.
+    mock_pycalista.list_accounts.return_value = [MOCK_ACCOUNT, MOCK_ACCOUNT_OTHER]
 
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
@@ -1046,3 +1054,278 @@ async def test_duplicate_rows_of_one_property_are_not_ambiguous(
     assert response["entry_id"] == first.entry_id
     clients[PROPERTY_ONE].get_invoice_pdf.assert_awaited_once_with(shared_id)
     clients[PROPERTY_TWO].get_invoice_pdf.assert_not_called()
+
+
+# ---------------------------------------------------- D1: reconfigure to a new email
+
+
+async def test_reconfigure_with_new_email_never_sends_the_old_property(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, mock_pycalista
+):
+    """A new email is validated without the old property ID, then resolves."""
+    entry = _entry(PROPERTY_ONE, MOCK_ACCOUNT.label, NAMESPACE_ONE)
+    entry.add_to_hass(hass)
+    new_email = "second@example.com"
+    mock_pycalista.list_accounts.return_value = [MOCK_ACCOUNT]
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "reconfigure", "entry_id": entry.entry_id}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={**MOCK_CONFIG, CONF_EMAIL: new_email},
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+
+    # The login of the new email never received the old property ID.
+    flow_call = mock_pycalista.client_class.call_args_list[0]
+    assert flow_call.kwargs.get("account_id") is None
+
+    updated = hass.config_entries.async_get_entry(entry.entry_id)
+    assert updated is not None
+    assert updated.data[CONF_EMAIL] == new_email
+    assert updated.data[CONF_ACCOUNT_ID] == PROPERTY_ONE
+    assert updated.unique_id == f"{new_email}:{PROPERTY_ONE}"
+
+
+# ------------------------------------ D2: reauth when the property is no longer linked
+
+
+async def test_reauth_aborts_when_the_property_is_no_longer_linked(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, mock_pycalista
+):
+    """A password cannot repair a removed property: ask for a reconfigure."""
+    entry = _entry(PROPERTY_ONE, MOCK_ACCOUNT.label, NAMESPACE_ONE)
+    entry.add_to_hass(hass)
+    # The account now lists another property only.
+    mock_pycalista.list_accounts.return_value = [MOCK_ACCOUNT_OTHER]
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": "reauth", "entry_id": entry.entry_id},
+        data=entry.data,
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], user_input={CONF_PASSWORD: "new-password"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_required"
+    # The property is never selected silently.
+    mock_pycalista.select_account.assert_not_called()
+
+
+# ------------------------------------------------ D3: entity registry migration
+
+
+async def test_upgrade_migrates_account_entity_unique_ids(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, mock_pycalista
+):
+    """Pre-0.10.0 entity unique IDs move to the namespace in place."""
+    from homeassistant.helpers import entity_registry as er
+
+    mock_pycalista.get_devices_history.return_value = copy.deepcopy(MOCK_DEVICES)
+    mock_pycalista.get_invoice_xls.return_value = list(MOCK_INVOICES)
+    email = MOCK_CONFIG[CONF_EMAIL]
+    entry = MockConfigEntry(
+        domain=DOMAIN, version=1, data=dict(MOCK_CONFIG), unique_id=email
+    )
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    old_ids = {
+        "sensor": [
+            f"{email}_latest_invoice_amount",
+            f"{email}_last_billed_date",
+            f"{email}_invoice_heating",
+            "bill_name_heating",
+            "billed_date_heating",
+            "bill_4448373/24_heating",
+        ],
+        "binary_sensor": [f"{email}_connection_status"],
+        "button": [f"{email}_refresh"],
+    }
+    old_entity_ids: dict[str, str] = {}
+    for platform, unique_ids in old_ids.items():
+        for unique_id in unique_ids:
+            registry_entry = registry.async_get_or_create(
+                platform,
+                DOMAIN,
+                unique_id,
+                config_entry=entry,
+                suggested_object_id=unique_id.replace(".", "_").replace("/", "_"),
+            )
+            old_entity_ids[unique_id] = registry_entry.entity_id
+    meter_entry = registry.async_get_or_create(
+        "sensor", DOMAIN, "heating-123_heating", config_entry=entry
+    )
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    resolved = hass.config_entries.async_get_entry(entry.entry_id)
+    assert resolved is not None
+    namespace = resolved.unique_id
+    assert namespace == NAMESPACE_ONE
+
+    for old_unique_id, entity_id in old_entity_ids.items():
+        assert registry.async_get(entity_id) is not None, old_unique_id
+        migrated = registry.async_get(entity_id)
+        assert migrated.unique_id.startswith(f"{namespace}_")
+        if old_unique_id == f"{email}_invoice_heating":
+            assert migrated.unique_id == f"{namespace}_invoice_heating"
+        # The old entry is gone: no duplicate entity.
+        assert (
+            registry.async_get_entity_id(
+                migrated.domain, DOMAIN, old_unique_id
+            )
+            is None
+        )
+
+    # The meter entity keeps its serial based unique ID and its entity ID.
+    meter = registry.async_get(meter_entry.entity_id)
+    assert meter is not None
+    assert meter.unique_id == "heating-123_heating"
+
+
+# ------------------------------------- D4: config-flow session cleanup on raise
+
+
+async def test_flow_detaches_session_when_the_client_constructor_raises(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, mock_pycalista
+):
+    """A constructor error still detaches the private flow session."""
+    with patch(
+        "custom_components.ista_calista.config_flow.PyCalistaIsta",
+        side_effect=ValueError("Email and password are required"),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input=dict(MOCK_CONFIG)
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "unknown"}
+    sessions = mock_pycalista.session_factory.sessions
+    assert len(sessions) == 1
+    sessions[0].detach.assert_called_once_with()
+    sessions[0].close.assert_not_called()
+
+
+async def test_setup_with_removed_property_asks_for_reconfigure(
+    recorder_mock,
+    hass: HomeAssistant,
+    caplog,
+    enable_custom_integrations,
+    two_properties,
+):
+    """A stored property that the portal dropped stops setup, and does not retry."""
+    _clients, _sessions, client_class = two_properties
+    entry = _entry(PROPERTY_ONE, MOCK_ACCOUNT.label, NAMESPACE_ONE)
+    entry.add_to_hass(hass)
+
+    # The client with the account ID fails; the probe without it works and shows
+    # that the property is gone.
+    client_class.behaviour[PROPERTY_ONE] = [
+        ("login", AsyncMock(side_effect=IstaApiError("Unknown account ID")))
+    ]
+    client_class.behaviour["legacy"] = [
+        ("login", AsyncMock(return_value=True)),
+        ("list_accounts", AsyncMock(return_value=[MOCK_ACCOUNT_OTHER])),
+    ]
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    failed = hass.config_entries.async_get_entry(entry.entry_id)
+    assert failed is not None
+    # A permanent error, not an endless SETUP_RETRY.
+    assert failed.state is ConfigEntryState.SETUP_ERROR
+    assert "Reconfigure required" in caplog.text
+    # The property was not switched silently.
+    assert failed.data[CONF_ACCOUNT_ID] == PROPERTY_ONE
+
+
+async def test_removed_property_with_a_transient_error_still_retries(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, two_properties
+):
+    """A connection error keeps the retry path, even with a stored property."""
+    _clients, _sessions, client_class = two_properties
+    entry = _entry(PROPERTY_ONE, MOCK_ACCOUNT.label, NAMESPACE_ONE)
+    entry.add_to_hass(hass)
+
+    client_class.behaviour[PROPERTY_ONE] = [
+        ("login", AsyncMock(side_effect=IstaConnectionError("offline")))
+    ]
+    client_class.behaviour["legacy"] = [
+        ("login", AsyncMock(side_effect=IstaConnectionError("still offline")))
+    ]
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    retrying = hass.config_entries.async_get_entry(entry.entry_id)
+    assert retrying is not None
+    assert retrying.state is ConfigEntryState.SETUP_RETRY
+
+
+async def test_reconfigure_identity_change_moves_entities_without_duplicates(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, two_properties
+):
+    """A new email moves stable entities in place and drops old bill entities."""
+    from homeassistant.helpers import entity_registry as er
+
+    _clients, _sessions, client_class = two_properties
+    # The new email holds one property, so the reconfigure needs no extra step.
+    client_class.behaviour["legacy"] = [
+        ("list_accounts", AsyncMock(return_value=[MOCK_ACCOUNT]))
+    ]
+
+    entry = _entry(PROPERTY_ONE, MOCK_ACCOUNT.label, NAMESPACE_ONE)
+    entry.add_to_hass(hass)
+    await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    registry = er.async_get(hass)
+    meter = registry.async_get_entity_id("sensor", DOMAIN, "heating-123_heating")
+    assert meter is not None
+
+    new_email = "second@example.com"
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "reconfigure", "entry_id": entry.entry_id}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], user_input={**MOCK_CONFIG, CONF_EMAIL: new_email}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    new_namespace = f"{new_email}:{PROPERTY_ONE}"
+
+    unique_ids = [
+        item.unique_id
+        for item in registry.entities.values()
+        if item.config_entry_id == entry.entry_id
+    ]
+    # No entity of the old namespace is left.
+    assert not [uid for uid in unique_ids if uid.startswith(f"{NAMESPACE_ONE}_")]
+    # Exactly one current account entity per logical key.
+    for key in (
+        "latest_invoice_amount",
+        "last_billed_date",
+        "connection_status",
+        "refresh",
+        "invoice_heating",
+        "bill_name_heating",
+    ):
+        assert unique_ids.count(f"{new_namespace}_{key}") == 1, key
+    # The meter entity is untouched.
+    assert registry.async_get(meter) is not None
+    assert registry.async_get(meter).unique_id == "heating-123_heating"

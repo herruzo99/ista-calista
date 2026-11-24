@@ -3,7 +3,8 @@
         "abort": {
             "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
             "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]",
-            "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
+            "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]",
+            "reconfigure_required": "The property of this entry is no longer linked to the account. Reconfigure the integration and select a property."
         },
         "error": {
             "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
