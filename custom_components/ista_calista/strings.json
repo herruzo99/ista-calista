@@ -154,11 +154,19 @@
     "services": {
         "download_invoice": {
             "name": "Download invoice",
-            "description": "Downloads an invoice PDF using its specific ID.",
+            "description": "Downloads an invoice PDF using its specific ID, for the property that owns it.",
             "fields": {
                 "invoice_id": {
                     "name": "Invoice ID",
-                    "description": "The unique ID of the invoice (e.g., from a bill sensor's attributes)."
+                    "description": "The unique ID of the invoice from a bill sensor attribute or the get_invoices response."
+                },
+                "entry_id": {
+                    "name": "Entry ID",
+                    "description": "Config entry of the property, from the get_invoices response. Use it when two properties share an invoice ID."
+                },
+                "account_id": {
+                    "name": "Property ID",
+                    "description": "Portal property ID, from the get_invoices response. Use it when two properties share an invoice ID."
                 }
             }
         },

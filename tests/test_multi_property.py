@@ -865,3 +865,184 @@ async def test_real_clientsession_detach_is_the_supported_cleanup(
     first.detach()
     second.detach()
     assert second.closed is True
+
+
+# -------------------------------------- a shared invoice ID across two properties
+
+
+async def _setup_shared_invoice_id(hass: HomeAssistant, clients):
+    """Load two properties that hold the same opaque invoice ID."""
+    shared_id = "HTM-SHARED"
+    first = _entry(PROPERTY_ONE, MOCK_ACCOUNT.label, NAMESPACE_ONE)
+    second = _entry(PROPERTY_TWO, MOCK_ACCOUNT_OTHER.label, NAMESPACE_TWO)
+    first.add_to_hass(hass)
+    second.add_to_hass(hass)
+    await _setup_two_entries(hass, first, second)
+
+    clients[PROPERTY_ONE].get_invoices.return_value = [
+        _invoice(PROPERTY_ONE, shared_id, "P1/24", 1)
+    ]
+    clients[PROPERTY_TWO].get_invoices.return_value = [
+        _invoice(PROPERTY_TWO, shared_id, "P2/24", 2)
+    ]
+    for entry in (first, second):
+        await hass.data[DOMAIN][entry.entry_id].async_refresh()
+    await hass.async_block_till_done()
+    return first, second, shared_id
+
+
+async def test_same_invoice_id_on_two_properties_is_listed_twice(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, two_properties
+):
+    """A shared invoice ID keeps one row per property in get_invoices."""
+    clients, _sessions, _client_class = two_properties
+    first, second, shared_id = await _setup_shared_invoice_id(hass, clients)
+
+    response = await hass.services.async_call(
+        DOMAIN, "get_invoices", {}, blocking=True, return_response=True
+    )
+    rows = [row for row in response["invoices"] if row["invoice_id"] == shared_id]
+
+    assert len(rows) == 2
+    assert {row["entry_id"] for row in rows} == {first.entry_id, second.entry_id}
+    assert {row["account_id"] for row in rows} == {PROPERTY_ONE, PROPERTY_TWO}
+
+
+async def test_download_of_an_ambiguous_invoice_id_fails(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, two_properties
+):
+    """Without a selector an ambiguous ID is an error, not the first match."""
+    clients, _sessions, _client_class = two_properties
+    first, second, shared_id = await _setup_shared_invoice_id(hass, clients)
+
+    with (
+        patch("homeassistant.core.Config.path", return_value="/tmp/www"),
+        patch("os.path.exists", return_value=True),
+        patch("builtins.open", mock_open()),
+        pytest.raises(ServiceValidationError, match="exists for 2 properties") as error,
+    ):
+        await hass.services.async_call(
+            DOMAIN,
+            "download_invoice",
+            {"invoice_id": shared_id},
+            blocking=True,
+            return_response=True,
+        )
+
+    message = str(error.value)
+    assert first.entry_id in message
+    assert second.entry_id in message
+    # Neither property was used.
+    clients[PROPERTY_ONE].get_invoice_pdf.assert_not_called()
+    clients[PROPERTY_TWO].get_invoice_pdf.assert_not_called()
+
+
+async def test_download_with_entry_id_uses_the_owning_client(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, two_properties
+):
+    """An explicit entry_id selects the property and its client."""
+    clients, _sessions, _client_class = two_properties
+    first, second, shared_id = await _setup_shared_invoice_id(hass, clients)
+
+    with (
+        patch("homeassistant.core.Config.path", return_value="/tmp/www"),
+        patch("os.path.exists", return_value=True),
+        patch("builtins.open", mock_open()),
+    ):
+        response = await hass.services.async_call(
+            DOMAIN,
+            "download_invoice",
+            {"invoice_id": shared_id, "entry_id": second.entry_id},
+            blocking=True,
+            return_response=True,
+        )
+
+    assert response["entry_id"] == second.entry_id
+    assert response["account_id"] == PROPERTY_TWO
+    clients[PROPERTY_TWO].get_invoice_pdf.assert_awaited_once_with(shared_id)
+    clients[PROPERTY_ONE].get_invoice_pdf.assert_not_called()
+
+
+async def test_download_with_account_id_uses_the_owning_client(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, two_properties
+):
+    """An explicit account_id selects the property as well."""
+    clients, _sessions, _client_class = two_properties
+    first, second, shared_id = await _setup_shared_invoice_id(hass, clients)
+
+    with (
+        patch("homeassistant.core.Config.path", return_value="/tmp/www"),
+        patch("os.path.exists", return_value=True),
+        patch("builtins.open", mock_open()),
+    ):
+        response = await hass.services.async_call(
+            DOMAIN,
+            "download_invoice",
+            {"invoice_id": shared_id, "account_id": PROPERTY_TWO},
+            blocking=True,
+            return_response=True,
+        )
+
+    assert response["entry_id"] == second.entry_id
+    clients[PROPERTY_TWO].get_invoice_pdf.assert_awaited_once_with(shared_id)
+    clients[PROPERTY_ONE].get_invoice_pdf.assert_not_called()
+
+
+async def test_download_with_wrong_entry_id_fails(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, two_properties
+):
+    """A selector that does not own the invoice cannot download it."""
+    clients, _sessions, _client_class = two_properties
+    first, second, shared_id = await _setup_shared_invoice_id(hass, clients)
+    other_entry = MockConfigEntry(domain=DOMAIN, version=2, data=dict(MOCK_CONFIG))
+    other_entry.add_to_hass(hass)
+
+    with pytest.raises(ServiceValidationError, match="not found for the selected"):
+        await hass.services.async_call(
+            DOMAIN,
+            "download_invoice",
+            {"invoice_id": shared_id, "entry_id": other_entry.entry_id},
+            blocking=True,
+            return_response=True,
+        )
+
+    clients[PROPERTY_ONE].get_invoice_pdf.assert_not_called()
+    clients[PROPERTY_TWO].get_invoice_pdf.assert_not_called()
+
+
+async def test_duplicate_rows_of_one_property_are_not_ambiguous(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, two_properties
+):
+    """Two rows with one invoice ID in one property are that property's invoice."""
+    clients, _sessions, _client_class = two_properties
+    shared_id = "HTM-DUPLICATE"
+    first = _entry(PROPERTY_ONE, MOCK_ACCOUNT.label, NAMESPACE_ONE)
+    second = _entry(PROPERTY_TWO, MOCK_ACCOUNT_OTHER.label, NAMESPACE_TWO)
+    first.add_to_hass(hass)
+    second.add_to_hass(hass)
+    await _setup_two_entries(hass, first, second)
+
+    row = _invoice(PROPERTY_ONE, shared_id, "D/24", 1)
+    coordinator = hass.data[DOMAIN][first.entry_id]
+    coordinator.data["invoices"] = [row, copy.copy(row)]
+    # The other property does not hold this ID.
+    clients[PROPERTY_TWO].get_invoices.return_value = [
+        _invoice(PROPERTY_TWO, "HTM-OTHER", "O/24", 5)
+    ]
+
+    with (
+        patch("homeassistant.core.Config.path", return_value="/tmp/www"),
+        patch("os.path.exists", return_value=True),
+        patch("builtins.open", mock_open()),
+    ):
+        response = await hass.services.async_call(
+            DOMAIN,
+            "download_invoice",
+            {"invoice_id": shared_id},
+            blocking=True,
+            return_response=True,
+        )
+
+    assert response["entry_id"] == first.entry_id
+    clients[PROPERTY_ONE].get_invoice_pdf.assert_awaited_once_with(shared_id)
+    clients[PROPERTY_TWO].get_invoice_pdf.assert_not_called()

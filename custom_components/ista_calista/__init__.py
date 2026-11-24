@@ -86,7 +86,13 @@ def _async_register_services(hass: HomeAssistant) -> None:
         DOMAIN,
         SERVICE_DOWNLOAD_INVOICE,
         partial(_async_handle_download_invoice, hass),
-        schema=vol.Schema({vol.Required("invoice_id"): cv.string}),
+        schema=vol.Schema(
+            {
+                vol.Required("invoice_id"): cv.string,
+                vol.Optional("entry_id"): cv.string,
+                vol.Optional("account_id"): cv.string,
+            }
+        ),
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
@@ -105,20 +111,78 @@ def _iter_coordinators(hass: HomeAssistant) -> Iterator[IstaCoordinator]:
             yield value
 
 
-def _find_invoice(
+def _invoice_matches(
     hass: HomeAssistant, invoice_id: str
-) -> tuple[IstaCoordinator | None, "Invoice | None"]:
-    """Return the coordinator that owns an invoice ID, and the invoice.
+) -> list[tuple[IstaCoordinator, "Invoice"]]:
+    """Return every loaded (entry, invoice) pair with this invoice ID.
 
-    The invoice ID is opaque and belongs to one property, so the search is
-    per entry: an entry only ever downloads through its own client.
+    The invoice ID is opaque and property scoped; nothing proves it is unique
+    across properties, so every match is kept.
     """
+    matches: list[tuple[IstaCoordinator, "Invoice"]] = []
     for coordinator in _iter_coordinators(hass):
         data = coordinator.data or {}
         for invoice in data.get("invoices", []):
             if invoice.invoice_id == invoice_id:
-                return coordinator, invoice
-    return None, None
+                matches.append((coordinator, invoice))
+    return matches
+
+
+def _select_invoice(
+    hass: HomeAssistant, call: ServiceCall
+) -> tuple[IstaCoordinator, "Invoice"]:
+    """Return the one entry and invoice that a download must use.
+
+    ``invoice_id`` is required. ``entry_id`` (preferred) or ``account_id``
+    select the property when the ID exists more than once. Without a selector
+    an ambiguous ID is an error: this code never picks the first match.
+    """
+    invoice_id: str = call.data["invoice_id"]
+    entry_id: str | None = call.data.get("entry_id")
+    account_id: str | None = call.data.get("account_id")
+
+    # Collapse to one row per property first: a coordinator can hold the same
+    # invoice ID more than once (history and list rows), and that is not an
+    # ambiguity between properties.
+    by_entry: dict[str, tuple[IstaCoordinator, "Invoice"]] = {}
+    for coordinator, invoice in _invoice_matches(hass, invoice_id):
+        by_entry.setdefault(coordinator.config_entry.entry_id, (coordinator, invoice))
+    matches = list(by_entry.values())
+
+    if entry_id:
+        matches = [
+            (coordinator, invoice)
+            for coordinator, invoice in matches
+            if coordinator.config_entry.entry_id == entry_id
+        ]
+    if account_id:
+        matches = [
+            (coordinator, invoice)
+            for coordinator, invoice in matches
+            if str(coordinator.config_entry.data.get(CONF_ACCOUNT_ID)) == account_id
+        ]
+
+    if not matches:
+        if entry_id or account_id:
+            raise ServiceValidationError(
+                f"Invoice with ID {invoice_id} not found for the selected "
+                "property. Please run 'Get invoices' first."
+            )
+        raise ServiceValidationError(
+            f"Invoice with ID {invoice_id} not found in the local cache. "
+            "Please run 'Get invoices' first."
+        )
+
+    if len(matches) > 1:
+        options = ", ".join(
+            sorted(coordinator.config_entry.entry_id for coordinator, _ in matches)
+        )
+        raise ServiceValidationError(
+            f"Invoice ID {invoice_id} exists for {len(matches)} properties. "
+            f"Set entry_id to one of: {options}."
+        )
+
+    return matches[0]
 
 
 def _safe_file_token(value: str | None, fallback: str) -> str:
@@ -202,12 +266,7 @@ async def _async_handle_download_invoice(
     invoice_id = call.data["invoice_id"]
     _LOGGER.debug("Service called: download_invoice")
 
-    coordinator, invoice = _find_invoice(hass, invoice_id)
-    if coordinator is None or invoice is None:
-        raise ServiceValidationError(
-            f"Invoice with ID {invoice_id} not found in the local cache. "
-            "Please run 'Get invoices' first."
-        )
+    coordinator, invoice = _select_invoice(hass, call)
 
     try:
         content = await coordinator.ista.get_invoice_pdf(invoice_id)
@@ -266,13 +325,14 @@ async def _async_handle_get_invoices(
                 ),
                 **identity,
             }
-            # The invoice ID is unique per property; use it when the portal gave
-            # one. Without an ID, keep the pre-0.10.0 key.
+            # The same invoice ID can exist on two properties, so the key holds
+            # the entry. Without an ID, keep the pre-0.10.0 fields in the key.
             key: Any = (
-                ("id", invoice.invoice_id)
+                ("id", identity["entry_id"], invoice.invoice_id)
                 if invoice.invoice_id
                 else (
                     "row",
+                    identity["entry_id"],
                     invoice.invoice_number,
                     record["date"],
                     invoice.device_type,

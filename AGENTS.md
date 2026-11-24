@@ -330,8 +330,14 @@ Other risks:
 
 Input: required `invoice_id` string. Response-only service.
 
-- Searches invoices across all coordinators and downloads through the client
-  that owns the matched invoice ID.
+- Matches the invoice ID in every coordinator, collapses the matches to one
+  row per entry (a coordinator can hold the same ID twice), then applies the
+  optional selectors.
+- `invoice_id` is required. `entry_id` (preferred) or `account_id` select the
+  property. With several loaded properties and no selector the call fails with
+  `ServiceValidationError` that lists the safe `entry_id` values: this code
+  never picks the first match.
+- Downloads through the client of the selected entry only.
 - Writes to `<config>/www/ista_<device_type>_<YYYYMMDD>.pdf`. The device type
   is slugified with `homeassistant.util.slugify(..., separator="_")`, an empty
   result falls back to `invoice`, and the final name is rejected if it is not
@@ -349,7 +355,8 @@ registered after unload; the returned path is not a `/local/...` URL.
 
 No input. Returns invoice dictionaries sorted by date descending. Each invoice
 carries `entry_id`, `account_id`, `account_label` and `email`. Rows are
-deduplicated by `invoice_id` when present, otherwise by number/date/type/amount. Registration uses `supports_response=True` rather than `SupportsResponse.ONLY`.
+deduplicated by entry and `invoice_id` when present, otherwise by entry and
+number/date/type/amount, so the same opaque ID on two properties gives two rows. Registration uses `supports_response=True` rather than `SupportsResponse.ONLY`.
 
 ### Refresh button
 

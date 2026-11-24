@@ -156,11 +156,19 @@
     "services": {
         "download_invoice": {
             "name": "Descargar factura",
-            "description": "Descarga un PDF de factura usando su ID específico.",
+            "description": "Descarga un PDF de factura usando su ID específico, para la propiedad que la posee.",
             "fields": {
                 "invoice_id": {
                     "name": "ID de factura",
-                    "description": "El ID único de la factura (ej., de los atributos de un sensor de factura)."
+                    "description": "El ID único de la factura, de un atributo de sensor de factura o de la respuesta de get_invoices."
+                },
+                "entry_id": {
+                    "name": "ID de entrada",
+                    "description": "Entrada de configuración de la propiedad, de la respuesta de get_invoices. Úsala cuando dos propiedades compartan un ID de factura."
+                },
+                "account_id": {
+                    "name": "ID de propiedad",
+                    "description": "ID de la propiedad del portal, de la respuesta de get_invoices. Úsalo cuando dos propiedades compartan un ID de factura."
                 }
             }
         },
