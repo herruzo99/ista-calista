@@ -79,19 +79,19 @@ class IstaCoordinator(DataUpdateCoordinator[IstaDeviceData]):
         super().__init__(
             hass,
             _LOGGER,
-            name=f"{DOMAIN} ({config_entry.title})",
+            name=f"{DOMAIN} ({config_entry.entry_id})",
             update_interval=update_interval,
             config_entry=config_entry,
         )
         _LOGGER.debug(
-            "IstaCoordinator initialized for '%s' with update interval: %s",
-            config_entry.title,
+            "IstaCoordinator initialized for entry %s with update interval: %s",
+            config_entry.entry_id,
             update_interval,
         )
 
     async def _async_update_data(self) -> IstaDeviceData:
         """Fetch latest data and merge with existing history."""
-        _LOGGER.debug("Starting data update for account: %s", self.config_entry.title)
+        _LOGGER.debug("Starting data update for entry: %s", self.config_entry.entry_id)
         is_initial_fetch = not self.data or not self.data.get("devices")
 
         if is_initial_fetch:

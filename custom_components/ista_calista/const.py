@@ -35,7 +35,6 @@ SESSION_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30)
 # --- Multi-property support ---
 # Every config entry owns one portal property. Entries made before 0.10.0 have
 # no account_id in their data and are resolved once during setup.
-EXPERIMENTAL_MULTI_PROPERTY: Final[bool] = True
 
 # --- Defaults ---
 DEFAULT_UPDATE_INTERVAL_HOURS: Final[int] = 24  # Default update interval

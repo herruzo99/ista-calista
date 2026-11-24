@@ -535,9 +535,10 @@ unverified.
 - Account device identifiers stay `(DOMAIN, entry.entry_id)`, so they are
   unique per property. The account device name is `Ista Account <label>`, or
   `Ista Account <email>` without a label.
-- The account ID and the label are never written to the log. Diagnostics
-  redact the password, the account ID and the label, replace the account ID in
-  the entry `unique_id` by a short hash and replace the label in the title.
+- The account ID and the label are never written to the log: log lines use the
+  entry ID, never the entry title. Diagnostics redact the password, the account
+  ID and the label, replace the account ID in the entry `unique_id` by a short
+  hash and replace the label in the title.
 
 ### Legacy version 1 entries
 
