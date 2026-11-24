@@ -398,7 +398,7 @@ nix develop --command ruff check .
 
 Verified on 2026-11-25 at `e30349c`:
 
-- Tests: **114 passed**.
+- Tests: **115 passed**.
 - Ruff: **passes**.
 - Nix environment: Home Assistant **2025.7.4**, Python **3.13.5**.
 - Imported library: sibling `../pycalista-ista`, version **0.9.4** (`PortalAccount`,
@@ -506,7 +506,7 @@ Do not “fix” this only in the integration. The schema belongs to the library
 6. Do not let one malformed invoice prevent unrelated meter entities from loading.
 7. Test statistics through the real recorder boundary when changing metadata or IDs.
 8. Add English translations when changing user-facing keys; update Spanish at the same time.
-9. Run all 114 tests and Ruff. State explicitly if a real HA runtime path was not tested.
+9. Run all 115 tests and Ruff. State explicitly if a real HA runtime path was not tested.
 10. Check sibling library behavior and version when changing parser-related expectations.
 11. Do not push, tag, publish, or dispatch release automation without explicit owner approval.
 
@@ -599,8 +599,9 @@ unverified.
 They iterate `hass.data[DOMAIN]` and use the coordinator that owns the invoice
 ID, so account A never downloads through the client of account B.
 `get_invoices` adds `entry_id`, `account_id`, `account_label` and `email` to
-every invoice, deduplicates by `invoice_id` when present (otherwise by the
-pre-0.10.0 key) and sorts newest first, with undated invoices last.
+every invoice, deduplicates by entry and `invoice_id` when present
+(otherwise by the entry and the pre-0.10.0 row key) and sorts newest first, with
+undated invoices last.
 
 ### Invoice data
 

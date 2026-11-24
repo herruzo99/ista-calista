@@ -1195,6 +1195,46 @@ async def test_upgrade_migrates_account_entity_unique_ids(
 # ------------------------------------- D4: config-flow session cleanup on raise
 
 
+async def test_upgrade_removes_stale_duplicate_from_intermediate_build(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, mock_pycalista
+):
+    """Both old and new registry shapes keep the current entity, not a duplicate."""
+    from homeassistant.helpers import entity_registry as er
+
+    email = MOCK_CONFIG[CONF_EMAIL]
+    old_unique_id = f"{email}_latest_invoice_amount"
+    new_unique_id = f"{NAMESPACE_ONE}_latest_invoice_amount"
+    entry = MockConfigEntry(
+        domain=DOMAIN, version=1, data=dict(MOCK_CONFIG), unique_id=email
+    )
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    old_entry = registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        old_unique_id,
+        config_entry=entry,
+        suggested_object_id="old_amount",
+    )
+    new_entry = registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        new_unique_id,
+        config_entry=entry,
+        suggested_object_id="new_amount",
+    )
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    resolved = hass.config_entries.async_get_entry(entry.entry_id)
+    assert resolved is not None
+    assert resolved.state is ConfigEntryState.LOADED
+    assert registry.async_get(old_entry.entity_id) is None
+    assert registry.async_get(new_entry.entity_id) is not None
+    assert registry.async_get(new_entry.entity_id).unique_id == new_unique_id
+
+
 async def test_flow_detaches_session_when_the_client_constructor_raises(
     recorder_mock, hass: HomeAssistant, enable_custom_integrations, mock_pycalista
 ):

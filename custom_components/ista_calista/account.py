@@ -9,6 +9,8 @@ Nothing in this module logs an account ID or a property label.
 
 from __future__ import annotations
 
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL
 from homeassistant.core import HomeAssistant, callback
@@ -16,6 +18,8 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import CONF_ACCOUNT_LABEL, DOMAIN, MANUFACTURER
+
+_LOGGER = logging.getLogger(__name__)
 
 ACCOUNT_MODEL = "Ista Calista Account"
 CONFIGURATION_URL = "https://oficina.ista.es/GesCon/MainPageAbo.do"
@@ -149,6 +153,25 @@ async def async_migrate_account_entities(
             entity_entry.unique_id, old_prefix, new_prefix, legacy=not drop_old_bills
         )
         if new_unique_id is None or new_unique_id == entity_entry.unique_id:
+            return None
+        existing = registry.async_get_entity_id(
+            entity_entry.domain, entity_entry.platform, new_unique_id
+        )
+        if existing is not None and existing != entity_entry.entity_id:
+            existing_entry = registry.async_get(existing)
+            if (
+                existing_entry is not None
+                and existing_entry.config_entry_id == entry.entry_id
+            ):
+                # An intermediate build could create both shapes. Keep the
+                # already-migrated entity and remove the stale duplicate.
+                registry.async_remove(entity_entry.entity_id)
+                return None
+            _LOGGER.warning(
+                "Cannot migrate entity %s: its new unique ID belongs to another "
+                "config entry.",
+                entity_entry.entity_id,
+            )
             return None
         return {"new_unique_id": new_unique_id}
 
