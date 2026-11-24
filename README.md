@@ -144,7 +144,8 @@ its own integration entry.
 - The entry title and the account device show the property label. The property
   label can be an address.
 - Each entry has a private session, its own cookie jar and its own property
-  selection. Two properties never share a session or an invoice download.
+  selection. The entry detaches its session on unload; it never closes a
+  session that Home Assistant owns. Two properties never share a session or an invoice download.
 - `ista_calista.get_invoices` returns the `entry_id`, `account_id`,
   `account_label` and `email` of every invoice, so you can tell properties
   apart. `ista_calista.download_invoice` uses the client that owns the invoice

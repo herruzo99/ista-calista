@@ -19,6 +19,7 @@ def mock_pycalista():
     mock_instance.get_billed_consumption = AsyncMock(return_value=[])
     mock_instance.get_invoices = AsyncMock(return_value=[])
     mock_instance.get_invoice_xls = AsyncMock(return_value=[])
+    mock_instance.get_invoice_pdf = AsyncMock(return_value=b"fake pdf content")
     mock_instance.close = AsyncMock()
     mock_instance.set_log_level = MagicMock()
     mock_class = MagicMock(return_value=mock_instance)

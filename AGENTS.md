@@ -9,7 +9,10 @@ Read this guide before changing the integration. Read `../pycalista-ista/AGENTS.
 
 1. Do not put real account exports, passwords, cookies, invoice PDFs, serial numbers, or locations in tests, logs, fixtures, or commits.
 2. Do not enable library DEBUG until `pycalista-ista` masks request data. Current DEBUG output includes the login password and session cookies.
-3. Keep Home Assistant's shared `aiohttp.ClientSession` open. The integration injects it into the library; library `close()` does not own it.
+3. Never close a session that Home Assistant owns. Since 0.10.0 the integration
+   does not inject the shared session: runtime entries and config-flow
+   validations create their own session and close it themselves, because
+   library `close()` does not close an injected session.
 4. Preserve UTC/date distinctions. Radio `Reading.date` is UTC midnight; billed/invoice fields are `date`; HA timestamp sensors localize date-only values.
 5. Keep dynamic entity unique IDs stable. Registry duplicates can silently drop entities, especially for a second account.
 6. Preserve old and new billed-consumption XLS headers in the library. Issue `herruzo99/ista-calista#4` was caused by the portal rename.
@@ -42,7 +45,8 @@ is resolved during setup, where a login is available. See section 18.
 ```text
 Home Assistant config entry
   └── async_setup_entry
-        ├── PyCalistaIsta(email, password, shared HA session)
+        ├── private session: async_create_clientsession(hass, timeout=30 s)
+        ├── PyCalistaIsta(email, password, private session, account_id=...)
         ├── login()
         ├── IstaCoordinator
         │     └── first refresh: 4 concurrent library calls
@@ -106,8 +110,8 @@ The coordinator is stored in both `entry.runtime_data` and `hass.data[DOMAIN][en
 
 ### Setup
 
-1. `async_setup` initializes `hass.data[DOMAIN]`.
-2. `async_setup_entry` gets Home Assistant's shared client session.
+1. `async_setup` initializes `hass.data[DOMAIN]` and registers the services.
+2. `async_setup_entry` creates a private client session for this entry.
 3. It constructs `PyCalistaIsta` and applies the configured log level globally to the library and integration loggers.
 4. `await ista.login()` maps:
    - `IstaLoginError` → `ConfigEntryAuthFailed`
@@ -115,7 +119,8 @@ The coordinator is stored in both `entry.runtime_data` and `hass.data[DOMAIN][en
 5. It creates the coordinator and stores it in runtime data and `hass.data`.
 6. `async_config_entry_first_refresh()` must succeed before platforms load. Failure becomes `ConfigEntryNotReady`.
 7. Sensor, binary sensor, and button platforms are forwarded.
-8. Two services are registered inside each entry's setup.
+8. The two services are registered once, in `async_setup`, not per entry.
+   Setup also calls the idempotent registration helper as a safety net.
 9. An update listener reloads the entry when options change.
 
 The log level is process-wide and is not restored on unload. Removing the integration does not guarantee DEBUG is off.
@@ -123,10 +128,13 @@ The log level is process-wide and is not restored on unload. Removing the integr
 ### Unload
 
 1. Unload all platforms.
-2. Call `ista.close()`. The injected HA session stays open.
+2. Call `ista.close()`, then `detach()` the private session of this entry. A
+   session that Home Assistant owns is never touched.
 3. Remove the coordinator from `hass.data`.
 
-Services are not removed. They remain registered after unload and can retain the last entry's closure.
+Services are registered once for the domain and stay registered after all
+entries unload. They hold no entry closure: each call reads
+`hass.data[DOMAIN]`, so an unloaded entry is simply not found.
 
 ### Removal
 
@@ -322,16 +330,26 @@ Other risks:
 
 Input: required `invoice_id` string. Response-only service.
 
-- Searches invoices across all coordinators.
-- Downloads through the service closure's client, which may belong to a different account than the matched invoice.
-- Writes to `<config>/www/ista_<device_type>_<YYYYMMDD>.pdf`.
-- Returns success, filename, and filesystem path.
+- Searches invoices across all coordinators and downloads through the client
+  that owns the matched invoice ID.
+- Writes to `<config>/www/ista_<device_type>_<YYYYMMDD>.pdf`. The device type
+  is slugified with `homeassistant.util.slugify(..., separator="_")`, an empty
+  result falls back to `invoice`, and the final name is rejected if it is not
+  its own `basename`.
+- If two loaded properties hold an invoice with the same device type and date,
+  a short hash of the entry ID is appended, so the files do not overwrite each
+  other. One matching property keeps the historical name.
+- Returns success, filename, path, `entry_id`, `account_id`, `account_label`
+  and `email`.
 
-Risks: services are never unregistered; path checks/mkdir block the event loop; same type/date overwrites; device type is not fully sanitized; returned path is not a `/local/...` URL.
+Remaining risks: `os.path.exists` still runs in the event loop; services stay
+registered after unload; the returned path is not a `/local/...` URL.
 
 ### `ista_calista.get_invoices`
 
-No input. Returns invoice dictionaries sorted by date descending and deduplicated by number/date/type/amount. Registration uses `supports_response=True` rather than `SupportsResponse.ONLY`.
+No input. Returns invoice dictionaries sorted by date descending. Each invoice
+carries `entry_id`, `account_id`, `account_label` and `email`. Rows are
+deduplicated by `invoice_id` when present, otherwise by number/date/type/amount. Registration uses `supports_response=True` rather than `SupportsResponse.ONLY`.
 
 ### Refresh button
 
@@ -432,7 +450,7 @@ Labels: **V** = source-read or reproduced locally; **I** = inferred; **U** = ver
 | B6 | Medium | V | Reconfigure cannot override season start stored in options. |
 | B7 | Medium | V | Fixed in 0.10.0 (account unique IDs carry the property). Account-level bill/date unique IDs collide across entries. |
 | B8 | Medium | V | Fixed in 0.10.0 (services register once in `async_setup`). Services register per entry and are never removed; closure/client account can mismatch. |
-| B9 | Medium | V | Invoice download blocks for path checks/mkdir; filename collisions and weak sanitization. |
+| B9 | Medium | V | Partly fixed in 0.10.0: cross-property file collisions, device-type sanitization and client ownership are fixed. Still open: `os.path.exists` runs in the event loop and the returned path is not a `/local/` URL. Original finding: invoice download blocks for path checks/mkdir; filename collisions and weak sanitization. |
 | B10 | Medium | V | `last_billed_date` is unavailable when invoices are empty but billed readings exist. |
 | B11 | Medium | V/I | Seasonal attributes change after restart as old history leaves the fetched window. |
 | B12 | Low | V | Fixed in 0.10.0 (bill entity resolves by invoice ID first). Bill entity resolves by invoice number only and ignores device type. |
@@ -443,7 +461,7 @@ Labels: **V** = source-read or reproduced locally; **I** = inferred; **U** = ver
 | B17 | Low | V | Global library/integration log levels are never restored. |
 | B18 | Low | V | Statistics tasks are unnamed and unobserved. |
 | B19 | Low | V | Spanish strings, icons, and service metadata drift. |
-| B20 | Low | V | Partly fixed in 0.10.0 (the property label is redacted). Diagnostics retain personal data and mislabel last reading as update time. |
+| B20 | Low | V | Partly fixed in 0.10.0: the property ID and label are redacted, the ID in `unique_id` is hashed and the label in the title is replaced. Still open: the email and the device locations remain in diagnostics, and the last reading is still labelled as the last update. |
 | B21 | Low | V/U | Gold quality scale is declared without its rules file or supporting evidence. |
 | B22 | Low | V | Python requirement, HA test version, coverage comment, and type-check configuration disagree. |
 | B23 | Low | V | Release workflow bypasses tests; tracked egg-info is stale. |
@@ -525,12 +543,16 @@ unverified.
   `SESSION_TIMEOUT` is 30 s (`const.py`). `async_get_clientsession` is not used
   in setup.
 - Each config-flow validation (user, reconfigure, reauth) creates its own
-  private session and closes it in `finally`. Two simultaneous flows of one
+  private session and detaches it in `finally`. Two simultaneous flows of one
   email therefore do not share a cookie jar.
-- The library closes only the sessions that it created itself, so the
-  integration closes its own session in `async_unload_entry`. Unloading one
-  entry closes only that entry's session.
-- A failed setup closes the session and removes the coordinator from
+- The library closes only the sessions that it created itself. The integration
+  calls `session.detach()` in `async_unload_entry`, in the failure paths of
+  setup and in the `finally` of each config-flow validation. Do **not** call
+  `await session.close()`: on a session of `async_create_clientsession`
+  (`const.WARN_CLOSE_MSG`) `close` is replaced by a usage reporter that does not
+  close anything. `detach()` is idempotent, so the detach that Home Assistant
+  registers on entry unload is safe.
+- A failed setup detaches the session and removes the coordinator from
   `hass.data[DOMAIN]`.
 
 ### Unique ID namespaces

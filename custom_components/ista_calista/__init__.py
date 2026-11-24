@@ -27,6 +27,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.util import slugify
 from pycalista_ista import (
     IstaApiError,
     IstaConnectionError,
@@ -120,6 +121,21 @@ def _find_invoice(
     return None, None
 
 
+def _safe_file_token(value: str | None, fallback: str) -> str:
+    """Return a lower-case file-name token with no path separator.
+
+    The portal value is not trusted: ``slugify`` drops every character that is
+    not a letter, a digit or the separator, so ``/``, ``\\`` and ``..`` cannot
+    change the path. An empty result falls back to a fixed token.
+    """
+    if not value:
+        return fallback
+    token = slugify(str(value), separator="_")
+    if not token or "/" in token or "\\" in token or token.strip(".") == "":
+        return fallback
+    return token
+
+
 def _filename_parts(invoice: "Invoice") -> tuple[str, str]:
     """Return the device type and the date text used in the file name."""
     date_str = (
@@ -127,11 +143,7 @@ def _filename_parts(invoice: "Invoice") -> tuple[str, str]:
         if invoice.invoice_date
         else "unknown_date"
     )
-    device_type_str = (
-        invoice.device_type.replace(" ", "_").lower()
-        if invoice.device_type
-        else "invoice"
-    )
+    device_type_str = _safe_file_token(invoice.device_type, "invoice")
     return device_type_str, date_str
 
 
@@ -160,13 +172,16 @@ def _invoice_filename(
     written to disk.
     """
     device_type_str, date_str = _filename_parts(invoice)
-    base = f"ista_{device_type_str}_{date_str}.pdf"
-    if len(_properties_with_same_filename(hass, device_type_str, date_str)) <= 1:
-        return base
-    token = hashlib.sha256(
-        coordinator.config_entry.entry_id.encode("utf-8")
-    ).hexdigest()[:8]
-    return f"ista_{device_type_str}_{date_str}_{token}.pdf"
+    suffix = ""
+    if len(_properties_with_same_filename(hass, device_type_str, date_str)) > 1:
+        suffix = "_" + hashlib.sha256(
+            coordinator.config_entry.entry_id.encode("utf-8")
+        ).hexdigest()[:8]
+    name = f"ista_{device_type_str}_{date_str}{suffix}.pdf"
+    # Belt and braces: the name must stay one file name below the www folder.
+    if os.path.basename(name) != name or "/" in name or "\\" in name:
+        return f"ista_invoice_{date_str}{suffix}.pdf"
+    return name
 
 
 def _invoice_identity(coordinator: IstaCoordinator) -> dict[str, Any]:
@@ -292,11 +307,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: IstaConfigEntry) -> bool
     except (ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady):
         # Do not keep the private session or the coordinator of a failed entry.
         hass.data[DOMAIN].pop(entry.entry_id, None)
-        await session.close()
+        session.detach()
         raise
     except Exception as err:
         hass.data[DOMAIN].pop(entry.entry_id, None)
-        await session.close()
+        session.detach()
         _LOGGER.exception("Unexpected error during ista Calista setup")
         raise ConfigEntryNotReady(
             f"Unexpected error during setup: {err}"
@@ -468,9 +483,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: IstaConfigEntry) -> boo
         coordinator = entry.runtime_data
         await coordinator.ista.close()
         if coordinator.session is not None:
-            # The session belongs to this entry only. Never touch a session that
-            # Home Assistant owns.
-            await coordinator.session.close()
+            # A clientsession of async_create_clientsession must be detached,
+            # not closed: its close() only reports usage. detach() is
+            # idempotent, so the detach that Home Assistant registered on entry
+            # unload is safe too. Never touch a session that HA owns.
+            coordinator.session.detach()
         hass.data[DOMAIN].pop(entry.entry_id, None)
         _LOGGER.info("Successfully unloaded config entry: %s", entry.entry_id)
 

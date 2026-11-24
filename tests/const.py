@@ -193,9 +193,14 @@ class RecordingSessionFactory:
         self.sessions: list[MagicMock] = []
 
     def __call__(self, *args: object, **kwargs: object) -> MagicMock:
-        """Return a new session mock."""
+        """Return a new session mock.
+
+        The integration must call ``detach()``, never ``close()``: on a session
+        of ``async_create_clientsession`` the real ``close`` only reports usage.
+        """
         session = MagicMock(name=f"clientsession-{len(self.sessions)}")
         session.close = AsyncMock()
+        session.detach = MagicMock()
         session.closed = False
         self.sessions.append(session)
         return session

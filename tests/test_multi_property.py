@@ -7,7 +7,9 @@ tests use two synthetic properties.
 """
 
 import asyncio
+import contextlib
 import copy
+import os
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
@@ -505,9 +507,11 @@ async def test_unload_one_entry_keeps_the_other(
 
     assert first.state is ConfigEntryState.NOT_LOADED
     assert second.state is ConfigEntryState.LOADED
-    # The unloaded entry closes its private session exactly once.
-    sessions.sessions[0].close.assert_awaited_once()
-    sessions.sessions[1].close.assert_not_called()
+    # The unloaded entry detaches its private session exactly once, and never
+    # uses close(), which only reports usage on a Home Assistant clientsession.
+    sessions.sessions[0].detach.assert_called_once_with()
+    sessions.sessions[0].close.assert_not_called()
+    sessions.sessions[1].detach.assert_not_called()
     assert first.entry_id not in hass.data[DOMAIN]
     assert second.entry_id in hass.data[DOMAIN]
     assert hass.data[DOMAIN][second.entry_id].last_update_success is True
@@ -672,7 +676,8 @@ async def test_concurrent_flows_use_private_sessions(
     assert len(sessions) == 2
     assert sessions[0] is not sessions[1]
     for session in sessions:
-        session.close.assert_awaited_once()
+        session.detach.assert_called_once_with()
+        session.close.assert_not_called()
     # Each client was built with its own private session.
     built_sessions = [
         call.args[2] for call in mock_pycalista.client_class.call_args_list
@@ -763,3 +768,100 @@ async def test_download_filename_keeps_old_name_for_one_property(
         )
 
     assert response["filename"] == "ista_heating_20240301.pdf"
+
+
+async def test_download_filename_cannot_escape_the_www_folder(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, mock_pycalista
+):
+    """A portal device type with path characters cannot change the saved path."""
+    mock_pycalista.get_devices_history.return_value = copy.deepcopy(MOCK_DEVICES)
+    unsafe = "a/b\\c"
+    invoice = Invoice(
+        invoice_id="HTM-UNSAFE",
+        invoice_number="U/24",
+        invoice_date=date(2024, 3, 1),
+        period_start=date(2024, 1, 1),
+        period_end=date(2024, 3, 1),
+        amount=11.0,
+        device_type=unsafe,
+    )
+    escaped = Invoice(
+        invoice_id="HTM-DOTS",
+        invoice_number="D/24",
+        invoice_date=date(2024, 4, 1),
+        period_start=date(2024, 2, 1),
+        period_end=date(2024, 4, 1),
+        amount=12.0,
+        device_type="../escape",
+    )
+    mock_pycalista.get_invoice_xls.return_value = []
+    mock_pycalista.get_invoices.return_value = [invoice, escaped]
+
+    entry = _entry(PROPERTY_ONE, MOCK_ACCOUNT.label, NAMESPACE_ONE)
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    names = []
+    with (
+        patch("homeassistant.core.Config.path", return_value="/tmp/www"),
+        patch("os.path.exists", return_value=True),
+        patch("builtins.open", mock_open()),
+    ):
+        for invoice_id in ("HTM-UNSAFE", "HTM-DOTS"):
+            response = await hass.services.async_call(
+                DOMAIN,
+                "download_invoice",
+                {"invoice_id": invoice_id},
+                blocking=True,
+                return_response=True,
+            )
+            names.append(response["filename"])
+
+    for name in names:
+        assert "/" not in name
+        assert "\\" not in name
+        assert os.path.basename(name) == name
+        assert name.startswith("ista_")
+        assert name.endswith(".pdf")
+        assert ".." not in name
+    assert names == ["ista_a_b_c_20240301.pdf", "ista_escape_20240401.pdf"]
+
+
+async def test_real_clientsession_detach_is_the_supported_cleanup(
+    hass: HomeAssistant, enable_custom_integrations
+):
+    """detach() closes a real Home Assistant clientsession, and close() does not.
+
+    ``async_create_clientsession`` replaces ``close`` with a wrapper that only
+    reports usage, so ``detach`` is the supported cleanup. Two sessions detach
+    independently, and detach is idempotent.
+    """
+    import aiohttp
+
+    from homeassistant.helpers.aiohttp_client import (
+        async_create_clientsession as create_real_session,
+    )
+
+    first = create_real_session(hass, timeout=aiohttp.ClientTimeout(total=30))
+    second = create_real_session(hass, timeout=aiohttp.ClientTimeout(total=30))
+
+    assert first.closed is False
+    assert second.closed is False
+    assert first is not second
+
+    # close() is replaced by a usage reporter on these sessions, so it does not
+    # close anything. In a test Home Assistant may also raise from the reporter.
+    with contextlib.suppress(Exception):
+        await first.close()
+    assert first.closed is False
+
+    first.detach()
+    assert first.closed is True
+    # The other session is untouched.
+    assert second.closed is False
+
+    # detach is idempotent, so Home Assistant may detach again on unload.
+    first.detach()
+    second.detach()
+    assert second.closed is True

@@ -169,8 +169,10 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             errors["base"] = "unknown"
         finally:
             await ista.close()
-            await session.close()
-            _LOGGER.debug("Ista API session closed after validation.")
+            # detach(), not close(): a clientsession of async_create_clientsession
+            # has a close() that only reports usage.
+            session.detach()
+            _LOGGER.debug("Ista API session detached after validation.")
 
         return errors
 
