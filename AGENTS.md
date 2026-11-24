@@ -371,17 +371,15 @@ Diagnostic connectivity entity. `is_on` equals `coordinator.last_update_success`
 
 ### Translations
 
-The repository ships `strings.json` and `translations/es.json`, but no `translations/en.json`.
+The repository ships `strings.json`, `translations/es.json`, and `translations/en.json`. Version 0.10.0 added English translations and the new property-selection/reconfigure messages.
 
-In an English test environment, entity names fell back to device class or `None`, producing IDs such as `sensor.living_room_none`. Config/options labels and translated exceptions have the same dependency. An English probe verified this behavior on HA 2025.7.4; newer HA behavior was not tested.
-
-Spanish drift includes missing season fields, removed old fields, and a billed-reading name that loses its `{location}` placeholder. Several entity keys have no icon override.
+Remaining Spanish drift includes some removed/old fields and a billed-reading name that loses its `{location}` placeholder. Several entity keys have no icon override.
 
 ### Diagnostics
 
-Only password is redacted. Email, entry title, and device locations remain. Serials are SHA-256 truncated to eight characters. `coordinator_status.last_update` is the newest reading date, not the last successful refresh time. Billed readings, invoices, and entity counts are absent.
+Password, property ID, and property label are redacted. The property ID inside `unique_id` is hashed, and the label inside `title` is replaced. Email and device locations remain. Serials are SHA-256 truncated to eight characters. `coordinator_status.last_update` is the newest reading date, not the last successful refresh time. Billed readings, invoices, and entity counts are absent.
 
-The module docstring incorrectly says “ista EcoTrend.”
+The module docstring still incorrectly says “ista EcoTrend.”
 
 ### Assets
 
@@ -398,14 +396,15 @@ nix develop --command pytest tests/test_sensor_statistics.py
 nix develop --command ruff check .
 ```
 
-Verified on 2026-11-24 at `058ed9d`:
+Verified on 2026-11-25 at `e30349c`:
 
-- Tests: **68 passed**.
-- Coverage with branch measurement: about **91.09%**.
+- Tests: **114 passed**.
 - Ruff: **passes**.
 - Nix environment: Home Assistant **2025.7.4**, Python **3.13.5**.
 - Imported library: sibling `../pycalista-ista`, version **0.9.4** (`PortalAccount`,
   `list_accounts`, `select_account`, paginated `get_invoices`).
+- Live library smoke: one property selected and verified, 63 invoices and 63 unique PDF IDs.
+- Live full-HA wiring: not run; the Home Assistant pytest harness blocks external sockets. Real HA session detachment is covered by a separate test.
 
 ### Local library shadowing
 
@@ -507,13 +506,13 @@ Do not “fix” this only in the integration. The schema belongs to the library
 6. Do not let one malformed invoice prevent unrelated meter entities from loading.
 7. Test statistics through the real recorder boundary when changing metadata or IDs.
 8. Add English translations when changing user-facing keys; update Spanish at the same time.
-9. Run all 68 tests and Ruff. State explicitly if a real HA runtime path was not tested.
+9. Run all 114 tests and Ruff. State explicitly if a real HA runtime path was not tested.
 10. Check sibling library behavior and version when changing parser-related expectations.
 11. Do not push, tag, publish, or dispatch release automation without explicit owner approval.
 
 ## 17. Limits of this audit
 
-Every production Python file, JSON/YAML asset, packaging/config/workflow file, README/INFO, and all 12 test files were read. Both full suites and local probes were run. No real Ista account was used. Live portal shapes, real serial/type values, current GitHub/Gitea CI, HACS validation, hassfest, and HA 2026.3 statistics behavior were not verified. See `../ista-calista-audit.md` for the complete evidence inventory and detailed probes.
+Every production Python file, JSON/YAML asset, packaging/config/workflow file, README/INFO, and all test files were read during the audit. Both full suites and local probes were run. A real single-property library smoke test was run; full-HA live wiring was blocked by the test harness's socket policy. Multi-property behavior is synthetic-tested only. Remote CI, HACS validation, hassfest, and HA 2026.3 statistics behavior were not verified. See `../ista-calista-audit.md` for the original evidence inventory.
 
 
 

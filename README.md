@@ -167,9 +167,10 @@ Limitations of this experimental release:
 
 - Two properties that report the same meter serial number would collide on the
   meter entity unique IDs and on the statistic IDs. No live portal showed this.
-- Existing account-level entity IDs change once after the upgrade to 0.10.0,
-  because the property is now part of their unique ID. Long-term statistics of
-  the meters do not change.
+- Existing stable account-level entities migrate in place after the upgrade to
+  0.10.0, so their entity IDs and history stay. Per-invoice entities of an old
+  property are removed when reconfigure changes the property. Meter entities
+  and their long-term statistics keep their IDs.
 - A version 1 entry is migrated offline. If the account holds several
   properties, setup stops and asks for a reconfigure, because the property
   cannot be chosen without a login.
