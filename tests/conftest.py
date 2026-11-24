@@ -41,5 +41,9 @@ def mock_pycalista():
             "custom_components.ista_calista.async_create_clientsession",
             new=session_factory,
         ),
+        patch(
+            "custom_components.ista_calista.config_flow.async_create_clientsession",
+            new=session_factory,
+        ),
     ):
         yield mock_instance

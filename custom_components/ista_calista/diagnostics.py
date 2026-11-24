@@ -11,7 +11,33 @@ from homeassistant.const import CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 
 from . import IstaConfigEntry
-from .const import CONF_ACCOUNT_LABEL
+from .const import CONF_ACCOUNT_ID, CONF_ACCOUNT_LABEL
+
+REDACTED = "**REDACTED**"
+
+
+def _account_id_token(account_id: str) -> str:
+    """Return a short, non-reversible token for a property ID."""
+    return hashlib.sha256(account_id.encode("utf-8")).hexdigest()[:8]
+
+
+def _redact_unique_id(unique_id: str | None, account_id: str | None) -> str | None:
+    """Remove the property ID from a unique ID.
+
+    The unique ID is ``<email>:<account_id>``. The email is a known,
+    pre-existing diagnostics gap; the property ID is replaced by a short hash,
+    so the ID is not recoverable from the diagnostics.
+    """
+    if not unique_id or not account_id:
+        return unique_id
+    return unique_id.replace(account_id, _account_id_token(account_id))
+
+
+def _redact_title(title: str, label: str | None) -> str:
+    """Remove the property label from the entry title."""
+    if not label:
+        return title
+    return title.replace(label, REDACTED)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,11 +50,15 @@ async def async_get_config_entry_diagnostics(
     coordinator = entry.runtime_data
 
     redacted_data: dict[str, Any] = {**entry.data}
-    redacted_data[CONF_PASSWORD] = "**REDACTED**"
-    # The property label is user-facing and can be an address, so it is
-    # redacted in diagnostics unless a user asks for it explicitly.
+    redacted_data[CONF_PASSWORD] = REDACTED
+    # The property label is user-facing and can be an address, and the property
+    # ID identifies the portal account. Both stay out of diagnostics.
+    account_id = entry.data.get(CONF_ACCOUNT_ID)
+    label = entry.data.get(CONF_ACCOUNT_LABEL)
+    if CONF_ACCOUNT_ID in redacted_data:
+        redacted_data[CONF_ACCOUNT_ID] = REDACTED
     if CONF_ACCOUNT_LABEL in redacted_data:
-        redacted_data[CONF_ACCOUNT_LABEL] = "**REDACTED**"
+        redacted_data[CONF_ACCOUNT_LABEL] = REDACTED
 
     last_update_iso = None
     if coordinator.last_update_success and coordinator.data:
@@ -44,12 +74,12 @@ async def async_get_config_entry_diagnostics(
     diag_data = {
         "config_entry": {
             "entry_id": entry.entry_id,
-            "title": entry.title,
+            "title": _redact_title(entry.title, label),
             "version": entry.version,
             "data": redacted_data,
             "options": entry.options,
             "source": str(entry.source),
-            "unique_id": entry.unique_id,
+            "unique_id": _redact_unique_id(entry.unique_id, account_id),
         },
         "coordinator_status": {
             "last_update_success": coordinator.last_update_success,

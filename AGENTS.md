@@ -503,7 +503,8 @@ unverified.
   unique per property. The account device name is `Ista Account <label>`, or
   `Ista Account <email>` without a label.
 - The account ID and the label are never written to the log. Diagnostics
-  redact both the password and the label.
+  redact the password, the account ID and the label, replace the account ID in
+  the entry `unique_id` by a short hash and replace the label in the title.
 
 ### Legacy version 1 entries
 
@@ -520,8 +521,12 @@ unverified.
 ### Session lifecycle
 
 - Setup creates one private session per entry:
-  `async_create_clientsession(hass, timeout=aiohttp.ClientTimeout(total=30))`.
-  `async_get_clientsession` is not used in setup.
+  `async_create_clientsession(hass, timeout=SESSION_TIMEOUT)`, where
+  `SESSION_TIMEOUT` is 30 s (`const.py`). `async_get_clientsession` is not used
+  in setup.
+- Each config-flow validation (user, reconfigure, reauth) creates its own
+  private session and closes it in `finally`. Two simultaneous flows of one
+  email therefore do not share a cookie jar.
 - The library closes only the sessions that it created itself, so the
   integration closes its own session in `async_unload_entry`. Unloading one
   entry closes only that entry's session.
@@ -558,6 +563,14 @@ pre-0.10.0 key) and sorts newest first, with undated invoices last.
   HTML invoice IDs.
 - A row with an ID but no invoice number still becomes a bill entity.
 - Merged invoices are sorted by date, newest first, `None` last.
+- Each detailed (HTML) invoice claims at most one history (XLS) row, so two
+  rows with the same date, type and amount keep their distinct IDs. Two
+  identical history rows are one invoice. A repeated detailed row with the same
+  invoice ID is ignored.
+- The download file name is `ista_<device_type>_<date>.pdf`. If two loaded
+  properties hold an invoice with the same device type and date, a short token
+  from the entry ID is appended, so one property cannot overwrite the file of
+  the other. A single matching property keeps the historical name.
 
 ### Live validation caveat
 

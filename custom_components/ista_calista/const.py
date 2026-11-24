@@ -2,6 +2,8 @@
 
 from typing import Final
 
+import aiohttp
+
 from homeassistant.const import Platform
 
 # --- Core Integration Constants ---
@@ -24,6 +26,11 @@ CONF_SEASON_START_DAY: Final[str] = "season_start_day"
 CONF_SEASON_START: Final[str] = "season_start"
 CONF_ACCOUNT_ID: Final[str] = "account_id"
 CONF_ACCOUNT_LABEL: Final[str] = "account_label"
+
+# --- Sessions ---
+# One private session per config entry and per config-flow validation. The
+# library closes only the sessions that it created itself.
+SESSION_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30)
 
 # --- Multi-property support ---
 # Every config entry owns one portal property. Entries made before 0.10.0 have

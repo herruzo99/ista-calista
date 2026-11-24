@@ -6,6 +6,7 @@ invoices. The portal of the test account holds one property only, so these
 tests use two synthetic properties.
 """
 
+import asyncio
 import copy
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
@@ -131,6 +132,10 @@ def two_properties():
         ),
         patch(
             "custom_components.ista_calista.async_create_clientsession", new=sessions
+        ),
+        patch(
+            "custom_components.ista_calista.config_flow.async_create_clientsession",
+            new=sessions,
         ),
     ):
         yield clients, sessions, client_class
@@ -626,3 +631,135 @@ async def test_download_invoice_of_an_unloaded_property_fails(
             blocking=True,
             return_response=True,
         )
+
+
+# ------------------------------------------------ config-flow session isolation
+
+
+async def test_concurrent_flows_use_private_sessions(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, mock_pycalista
+):
+    """Two flows of one email never share a cookie jar.
+
+    Each validation attempt creates its own session, and each flow closes the
+    session that it created.
+    """
+    # Two properties keep both flows on the select_account form, so no entry is
+    # created and both validations run in the same event-loop step.
+    mock_pycalista.list_accounts.return_value = [MOCK_ACCOUNT, MOCK_ACCOUNT_OTHER]
+    flow_ids = []
+    for _ in range(2):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": "user"}
+        )
+        flow_ids.append(result["flow_id"])
+
+    results = await asyncio.gather(
+        *(
+            hass.config_entries.flow.async_configure(
+                flow_id, user_input=dict(MOCK_CONFIG)
+            )
+            for flow_id in flow_ids
+        )
+    )
+    await hass.async_block_till_done()
+
+    assert [result["step_id"] for result in results] == [
+        "select_account",
+        "select_account",
+    ]
+    sessions = mock_pycalista.session_factory.sessions
+    assert len(sessions) == 2
+    assert sessions[0] is not sessions[1]
+    for session in sessions:
+        session.close.assert_awaited_once()
+    # Each client was built with its own private session.
+    built_sessions = [
+        call.args[2] for call in mock_pycalista.client_class.call_args_list
+    ]
+    assert built_sessions == sessions
+
+
+# -------------------------------------------------- invoice file name isolation
+
+
+async def test_download_filename_does_not_overwrite_other_property(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, two_properties
+):
+    """Two properties with the same device type and date get different files."""
+    clients, _sessions, _client_class = two_properties
+    first = _entry(PROPERTY_ONE, MOCK_ACCOUNT.label, NAMESPACE_ONE)
+    second = _entry(PROPERTY_TWO, MOCK_ACCOUNT_OTHER.label, NAMESPACE_TWO)
+    first.add_to_hass(hass)
+    second.add_to_hass(hass)
+    await _setup_two_entries(hass, first, second)
+
+    # Give both properties an invoice with the same device type and date.
+    clients[PROPERTY_ONE].get_invoices.return_value = [
+        _invoice(PROPERTY_ONE, f"INV-{PROPERTY_ONE}-1", "S-1", 1)
+    ]
+    clients[PROPERTY_TWO].get_invoices.return_value = [
+        _invoice(PROPERTY_TWO, f"INV-{PROPERTY_TWO}-1", "S-2", 1)
+    ]
+    for entry in (first, second):
+        await hass.data[DOMAIN][entry.entry_id].async_refresh()
+    await hass.async_block_till_done()
+
+    names = []
+    with (
+        patch("homeassistant.core.Config.path", return_value="/tmp/www"),
+        patch("os.path.exists", return_value=True),
+        patch("builtins.open", mock_open()),
+    ):
+        for account_id in (PROPERTY_ONE, PROPERTY_TWO):
+            response = await hass.services.async_call(
+                DOMAIN,
+                "download_invoice",
+                {"invoice_id": f"INV-{account_id}-1"},
+                blocking=True,
+                return_response=True,
+            )
+            names.append(response["filename"])
+
+    assert names[0] != names[1]
+    # The old name is kept as the prefix, and the property token is appended.
+    assert names[0].startswith("ista_heating_20240301")
+    assert names[1].startswith("ista_heating_20240301")
+    assert len({name for name in names}) == 2
+
+
+async def test_download_filename_keeps_old_name_for_one_property(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, two_properties
+):
+    """A device type and date that only one property has keeps the old name."""
+    clients, _sessions, _client_class = two_properties
+    first = _entry(PROPERTY_ONE, MOCK_ACCOUNT.label, NAMESPACE_ONE)
+    second = _entry(PROPERTY_TWO, MOCK_ACCOUNT_OTHER.label, NAMESPACE_TWO)
+    first.add_to_hass(hass)
+    second.add_to_hass(hass)
+    await _setup_two_entries(hass, first, second)
+
+    clients[PROPERTY_ONE].get_invoices.return_value = [
+        _invoice(PROPERTY_ONE, f"INV-{PROPERTY_ONE}-1", "S-1", 1)
+    ]
+    clients[PROPERTY_TWO].get_invoices.return_value = [
+        _invoice(PROPERTY_TWO, f"INV-{PROPERTY_TWO}-1", "S-2", 9)
+    ]
+    for entry in (first, second):
+        await hass.data[DOMAIN][entry.entry_id].async_refresh()
+    await hass.async_block_till_done()
+
+    with (
+        patch("homeassistant.core.Config.path", return_value="/tmp/www"),
+        patch("os.path.exists", return_value=True),
+        patch("builtins.open", mock_open()),
+    ):
+        response = await hass.services.async_call(
+            DOMAIN,
+            "download_invoice",
+            {"invoice_id": f"INV-{PROPERTY_ONE}-1"},
+            blocking=True,
+            return_response=True,
+        )
+
+    assert response["filename"] == "ista_heating_20240301.pdf"

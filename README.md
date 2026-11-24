@@ -148,7 +148,10 @@ its own integration entry.
 - `ista_calista.get_invoices` returns the `entry_id`, `account_id`,
   `account_label` and `email` of every invoice, so you can tell properties
   apart. `ista_calista.download_invoice` uses the client that owns the invoice
-  ID.
+  ID. If two properties hold an invoice with the same device type and date, the
+  saved file name gets a short suffix, so the properties do not overwrite each
+  other. One matching property keeps the old file name.
+- Diagnostics redact the password, the property ID and the property label.
 - Meter entities and their long-term statistics keep their serial based IDs.
   Account-level entities (invoice, bill, connection, refresh) use the property
   in their unique ID.

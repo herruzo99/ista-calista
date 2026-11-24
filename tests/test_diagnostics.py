@@ -1,5 +1,7 @@
 """Tests for the diagnostics platform."""
 
+import json
+
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.components.diagnostics import (
     get_diagnostics_for_config_entry,
@@ -98,6 +100,7 @@ async def test_diagnostics_redact_property_label(
     entry = MockConfigEntry(
         domain=DOMAIN,
         version=2,
+        title=f"{MOCK_CONFIG['email']} \u2014 {MOCK_ACCOUNT.label}",
         unique_id=f"{MOCK_CONFIG['email']}:{MOCK_ACCOUNT.account_id}",
         data={
             **MOCK_CONFIG,
@@ -112,6 +115,17 @@ async def test_diagnostics_redact_property_label(
     diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
 
     assert diagnostics["config_entry"]["data"][CONF_ACCOUNT_LABEL] == "**REDACTED**"
-    assert diagnostics["config_entry"]["data"][CONF_ACCOUNT_ID] == (
-        MOCK_ACCOUNT.account_id
+    assert diagnostics["config_entry"]["data"][CONF_ACCOUNT_ID] == "**REDACTED**"
+
+    # Neither the property ID nor the label can be recovered from the dump, in
+    # the data, the unique ID or the title.
+    serialized = json.dumps(diagnostics)
+    assert MOCK_ACCOUNT.account_id not in serialized
+    assert MOCK_ACCOUNT.label not in serialized
+    assert diagnostics["config_entry"]["title"].endswith("**REDACTED**")
+    assert diagnostics["config_entry"]["unique_id"].startswith(
+        f"{MOCK_CONFIG['email']}:"
+    )
+    assert diagnostics["config_entry"]["unique_id"] != (
+        f"{MOCK_CONFIG['email']}:{MOCK_ACCOUNT.account_id}"
     )

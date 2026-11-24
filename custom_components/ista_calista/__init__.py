@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from collections.abc import Iterator
@@ -41,6 +42,7 @@ from .const import (
     DOMAIN,
     LOG_LEVELS,
     PLATFORMS,
+    SESSION_TIMEOUT,
 )
 from .coordinator import IstaCoordinator
 
@@ -57,8 +59,6 @@ MODEL_TO_KEY_MAP: Final[dict[str, str]] = {
 
 # One private session per config entry. The library only closes sessions that it
 # created itself, so this integration closes the session it creates.
-SESSION_TIMEOUT: Final[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=30)
-
 SERVICE_DOWNLOAD_INVOICE: Final[str] = "download_invoice"
 SERVICE_GET_INVOICES: Final[str] = "get_invoices"
 
@@ -120,6 +120,55 @@ def _find_invoice(
     return None, None
 
 
+def _filename_parts(invoice: "Invoice") -> tuple[str, str]:
+    """Return the device type and the date text used in the file name."""
+    date_str = (
+        invoice.invoice_date.strftime("%Y%m%d")
+        if invoice.invoice_date
+        else "unknown_date"
+    )
+    device_type_str = (
+        invoice.device_type.replace(" ", "_").lower()
+        if invoice.device_type
+        else "invoice"
+    )
+    return device_type_str, date_str
+
+
+def _properties_with_same_filename(
+    hass: HomeAssistant, device_type_str: str, date_str: str
+) -> set[str]:
+    """Return the entries that hold an invoice with this file name pattern."""
+    entry_ids: set[str] = set()
+    for coordinator in _iter_coordinators(hass):
+        for candidate in (coordinator.data or {}).get("invoices", []):
+            if _filename_parts(candidate) == (device_type_str, date_str):
+                entry_ids.add(coordinator.config_entry.entry_id)
+                break
+    return entry_ids
+
+
+def _invoice_filename(
+    hass: HomeAssistant, coordinator: IstaCoordinator, invoice: "Invoice"
+) -> str:
+    """Return a file name that another property cannot overwrite.
+
+    The historical name has no property in it, so deep pagination makes two
+    properties with the same device type and date share one file. One matching
+    property keeps the old name; more than one adds a short entry token. The
+    token is derived from the entry ID, so no property label or account ID is
+    written to disk.
+    """
+    device_type_str, date_str = _filename_parts(invoice)
+    base = f"ista_{device_type_str}_{date_str}.pdf"
+    if len(_properties_with_same_filename(hass, device_type_str, date_str)) <= 1:
+        return base
+    token = hashlib.sha256(
+        coordinator.config_entry.entry_id.encode("utf-8")
+    ).hexdigest()[:8]
+    return f"ista_{device_type_str}_{date_str}_{token}.pdf"
+
+
 def _invoice_identity(coordinator: IstaCoordinator) -> dict[str, Any]:
     """Return the entry identity fields added to service responses."""
     entry = coordinator.config_entry
@@ -152,15 +201,7 @@ async def _async_handle_download_invoice(
             f"Failed to download invoice PDF for ID {invoice_id}: {err}"
         ) from err
 
-    date_str = (
-        invoice.invoice_date.strftime("%Y%m%d")
-        if invoice.invoice_date
-        else "unknown_date"
-    )
-    device_type_str = (
-        invoice.device_type.replace(" ", "_").lower() if invoice.device_type else "invoice"
-    )
-    filename = f"ista_{device_type_str}_{date_str}.pdf"
+    filename = _invoice_filename(hass, coordinator, invoice)
 
     base_path = hass.config.path("www")
     if not os.path.exists(base_path):

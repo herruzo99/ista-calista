@@ -164,8 +164,10 @@ class IstaCoordinator(DataUpdateCoordinator[IstaDeviceData]):
         else:
             invoices_xls = invoice_xls_result
 
-        # Merge strategy: Use XLS as base (full history), but update with data from the list (which has IDs)
-        # Use a more robust key to avoid collisions with null invoice numbers
+        # Merge strategy: the XLS is the full history and has no invoice ID; the
+        # HTML list has the IDs but only the recent pages. Each detailed invoice
+        # claims at most one history row, so two rows that look identical keep
+        # their distinct IDs.
         def _get_inv_key(i: Invoice) -> tuple:
             return (i.invoice_number, i.invoice_date, i.device_type, i.amount)
 
@@ -175,41 +177,56 @@ class IstaCoordinator(DataUpdateCoordinator[IstaDeviceData]):
                 return a is None and b is None
             return abs(a - b) < 0.01
 
-        merged_invoices: dict[tuple, Invoice] = {}
+        def _is_match(history_row: Invoice, detail: Invoice) -> bool:
+            """Return True when a detailed invoice describes a history row."""
+            if history_row.invoice_date != detail.invoice_date:
+                return False
+            if history_row.device_type != detail.device_type:
+                return False
+            if not _amounts_match(history_row.amount, detail.amount):
+                return False
+            if detail.invoice_number is None:
+                return True
+            return history_row.invoice_number == detail.invoice_number
 
-        # Add XLS ones first (full history/metadata)
+        merged: list[Invoice] = []
+        seen_history: set[tuple] = set()
         for inv in invoices_xls:
-            merged_invoices[_get_inv_key(inv)] = inv
-
-        # Update/Add detailed ones (they have invoice_id)
-        for inv in invoices_list:
+            # Two history rows with the same values are the same invoice.
             key = _get_inv_key(inv)
-            if key in merged_invoices:
-                existing = merged_invoices[key]
-                merged_invoices[key] = replace(existing, invoice_id=inv.invoice_id)
-            else:
-                # If exact match fails, try matching by (date, type, amount) if invoice_number is None
-                if inv.invoice_number is None:
-                    match_found = False
-                    for existing_key, existing_inv in merged_invoices.items():
-                        if (
-                            existing_inv.invoice_date == inv.invoice_date
-                            and existing_inv.device_type == inv.device_type
-                            and _amounts_match(existing_inv.amount, inv.amount)
-                        ):
-                            merged_invoices[existing_key] = replace(
-                                existing_inv, invoice_id=inv.invoice_id
-                            )
-                            match_found = True
-                            break
-                    if not match_found:
-                        merged_invoices[key] = inv
-                else:
-                    merged_invoices[key] = inv
+            if key in seen_history:
+                continue
+            seen_history.add(key)
+            merged.append(inv)
+
+        claimed: set[int] = set()
+        for detail in invoices_list:
+            if detail.invoice_id and any(
+                row.invoice_id == detail.invoice_id for row in merged
+            ):
+                continue
+            match_index = next(
+                (
+                    index
+                    for index, row in enumerate(merged)
+                    if index not in claimed
+                    and row.invoice_id is None
+                    and _is_match(row, detail)
+                ),
+                None,
+            )
+            if match_index is None:
+                # This detailed invoice is not in the history: keep it as it is.
+                merged.append(detail)
+                continue
+            claimed.add(match_index)
+            merged[match_index] = replace(
+                merged[match_index], invoice_id=detail.invoice_id
+            )
 
         # Newest first. An invoice without a date goes last.
         invoices = sorted(
-            merged_invoices.values(),
+            merged,
             key=lambda i: (i.invoice_date is None, _descending_date(i.invoice_date)),
         )
 

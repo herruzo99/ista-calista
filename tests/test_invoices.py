@@ -287,3 +287,131 @@ async def test_get_invoices_deduplicates_by_invoice_id(
     )
     assert len(response["invoices"]) == 1
     assert response["invoices"][0]["invoice_id"] == first.invoice_id
+
+
+def _same_shape_rows(count: int, with_id: bool) -> list[Invoice]:
+    """Return ``count`` rows of the live 63-row shape.
+
+    Rows differ by date; the HTML rows are the same invoices as the XLS rows,
+    but they carry the opaque invoice ID.
+    """
+    rows = []
+    for index in range(count):
+        year = 2020 + index // 12
+        month = 1 + index % 12
+        rows.append(
+            Invoice(
+                invoice_id=f"HTM-{index:03d}" if with_id else None,
+                invoice_number=None,
+                invoice_date=date(year, month, 1),
+                period_start=date(year, month, 1),
+                period_end=date(year, month, 28),
+                amount=float(20 + index),
+                device_type="heating",
+            )
+        )
+    return rows
+
+
+async def test_full_history_63_xls_and_63_html_rows(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, mock_pycalista
+):
+    """63 history rows and 63 detailed rows merge to 63 invoices with 63 IDs."""
+    mock_pycalista.get_devices_history.return_value = copy.deepcopy(MOCK_DEVICES)
+    xls_rows = _same_shape_rows(63, with_id=False)
+    html_rows = _same_shape_rows(63, with_id=True)
+    mock_pycalista.get_invoice_xls.return_value = list(xls_rows)
+    mock_pycalista.get_invoices.return_value = list(html_rows)
+
+    entry = _entry()
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    invoices = hass.data[DOMAIN][entry.entry_id].data["invoices"]
+    assert len(invoices) == 63
+    invoice_ids = {invoice.invoice_id for invoice in invoices}
+    assert invoice_ids == {row.invoice_id for row in html_rows}
+    assert len(invoice_ids) == 63
+    # The full history survives: every date of the XLS is still there.
+    assert {invoice.invoice_date for invoice in invoices} == {
+        row.invoice_date for row in xls_rows
+    }
+
+
+async def test_rows_with_the_same_values_keep_distinct_ids(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, mock_pycalista
+):
+    """Two detailed rows with the same date, type and amount keep both IDs.
+
+    The history holds one row of that shape. The first detailed row claims it;
+    the second row is a distinct invoice and is kept as its own row. A history
+    row that looks the same twice is a duplicate and is collapsed.
+    """
+    mock_pycalista.get_devices_history.return_value = copy.deepcopy(MOCK_DEVICES)
+    history_row = Invoice(
+        invoice_id=None,
+        invoice_number=None,
+        invoice_date=date(2024, 3, 1),
+        period_start=date(2024, 1, 1),
+        period_end=date(2024, 3, 1),
+        amount=40.0,
+        device_type="heating",
+    )
+    first = Invoice(
+        invoice_id="HTM-A",
+        invoice_number=None,
+        invoice_date=date(2024, 3, 1),
+        period_start=date(2024, 1, 1),
+        period_end=date(2024, 3, 1),
+        amount=40.0,
+        device_type="heating",
+    )
+    second = Invoice(
+        invoice_id="HTM-B",
+        invoice_number=None,
+        invoice_date=date(2024, 3, 1),
+        period_start=date(2024, 1, 1),
+        period_end=date(2024, 3, 1),
+        amount=40.0,
+        device_type="heating",
+    )
+    mock_pycalista.get_invoice_xls.return_value = [history_row, copy.copy(history_row)]
+    mock_pycalista.get_invoices.return_value = [first, second]
+
+    entry = _entry()
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    invoices = hass.data[DOMAIN][entry.entry_id].data["invoices"]
+    # The two history rows are the same invoice; both detailed IDs survive.
+    assert len(invoices) == 2
+    assert {invoice.invoice_id for invoice in invoices} == {"HTM-A", "HTM-B"}
+
+
+async def test_duplicate_detailed_row_is_ignored(
+    recorder_mock, hass: HomeAssistant, enable_custom_integrations, mock_pycalista
+):
+    """The same detailed invoice twice is one invoice."""
+    mock_pycalista.get_devices_history.return_value = copy.deepcopy(MOCK_DEVICES)
+    row = Invoice(
+        invoice_id="HTM-SAME",
+        invoice_number="S/24",
+        invoice_date=date(2024, 3, 1),
+        period_start=date(2024, 1, 1),
+        period_end=date(2024, 3, 1),
+        amount=15.0,
+        device_type="heating",
+    )
+    mock_pycalista.get_invoice_xls.return_value = []
+    mock_pycalista.get_invoices.return_value = [row, copy.copy(row)]
+
+    entry = _entry()
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    invoices = hass.data[DOMAIN][entry.entry_id].data["invoices"]
+    assert len(invoices) == 1
+    assert invoices[0].invoice_id == "HTM-SAME"

@@ -16,7 +16,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import callback
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.selector import (
     DateSelector,
     DateSelectorConfig,
@@ -56,6 +56,7 @@ from .const import (
     LOG_LEVELS,
     MAX_UPDATE_INTERVAL_HOURS,
     MIN_UPDATE_INTERVAL_HOURS,
+    SESSION_TIMEOUT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -139,7 +140,10 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
         password = user_input[CONF_PASSWORD]
         _LOGGER.debug("Starting input validation for user: %s", email)
 
-        session = async_get_clientsession(self.hass)
+        # A private session per validation attempt: two flows of one email must
+        # not share cookies. The library does not close an injected session, so
+        # this flow closes its own in the `finally` block.
+        session = async_create_clientsession(self.hass, timeout=SESSION_TIMEOUT)
         if account_id:
             ista = PyCalistaIsta(email, password, session, account_id=account_id)
         else:
@@ -165,6 +169,7 @@ class IstaConfigFlow(ConfigFlow, domain=DOMAIN):
             errors["base"] = "unknown"
         finally:
             await ista.close()
+            await session.close()
             _LOGGER.debug("Ista API session closed after validation.")
 
         return errors
