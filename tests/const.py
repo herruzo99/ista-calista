@@ -1,5 +1,4 @@
 import copy
-from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -11,27 +10,18 @@ from pycalista_ista import (
     HeatingDevice,
     HotWaterDevice,
     Invoice,
+    PortalAccount,
     Reading,
 )
 
 from custom_components.ista_calista.const import CONF_OFFSET, CONF_SEASON_START
 
 
-@dataclass(frozen=True)
-class FakePortalAccount:
-    """Stand-in for the library PortalAccount (pycalista-ista >= 0.10.0).
-
-    The frozen contract is ``PortalAccount(account_id: str, label: str)``. The
-    class is rebuilt here so the tests do not depend on the installed version.
-    """
-
-    account_id: str
-    label: str
-
-
 # Two portal properties of one email, used to prove property isolation.
-MOCK_ACCOUNT = FakePortalAccount(account_id="acc-1", label="Calle Mayor 1")
-MOCK_ACCOUNT_OTHER = FakePortalAccount(account_id="acc-2", label="Calle Mayor 2")
+# PortalAccount(account_id, label) is the library contract of pycalista-ista
+# 0.10.0; the tests use the real class, so a contract change fails here.
+MOCK_ACCOUNT = PortalAccount(account_id="acc-1", label="Calle Mayor 1")
+MOCK_ACCOUNT_OTHER = PortalAccount(account_id="acc-2", label="Calle Mayor 2")
 
 # Mock user configuration (email, password, and offset date)
 MOCK_CONFIG = {

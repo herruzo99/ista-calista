@@ -193,6 +193,8 @@ async def test_legacy_entry_resolves_its_only_property(
     assert resolved.data[CONF_ACCOUNT_LABEL] == MOCK_ACCOUNT.label
     assert resolved.unique_id == NAMESPACE_ONE
     assert resolved.title == f"{MOCK_CONFIG[CONF_EMAIL]} \u2014 {MOCK_ACCOUNT.label}"
+    # The single property is selected explicitly in the client.
+    mock_pycalista.select_account.assert_awaited_once_with(PROPERTY_ONE)
 
 
 async def test_legacy_entry_with_two_properties_requires_reconfigure(

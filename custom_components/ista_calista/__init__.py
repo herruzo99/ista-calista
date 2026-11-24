@@ -92,7 +92,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
         DOMAIN,
         SERVICE_GET_INVOICES,
         partial(_async_handle_get_invoices, hass),
-        supports_response=SupportsResponse.ONLY,
+        # A response is optional here: the pre-0.10.0 registration allowed both.
+        supports_response=True,
     )
 
 
@@ -347,6 +348,21 @@ async def _async_create_client(
             f"The account {email} has several properties. Reconfigure the "
             "integration and select one property for this entry."
         )
+
+    # Select the property explicitly: invoice IDs are session and property
+    # specific, so the client must show the same property as the entry.
+    try:
+        await client.select_account(str(accounts[0].account_id))
+    except IstaLoginError as err:
+        raise ConfigEntryAuthFailed(
+            translation_domain=DOMAIN,
+            translation_key="authentication_exception",
+            translation_placeholders={CONF_EMAIL: email},
+        ) from err
+    except (IstaConnectionError, IstaApiError) as err:
+        raise ConfigEntryNotReady(
+            f"Failed to select the property of the account: {err}"
+        ) from err
 
     _async_persist_account(hass, entry, accounts[0])
     return client
