@@ -270,9 +270,7 @@ class IstaAverageDailySensor(CoordinatorEntity["IstaCoordinator"], SensorEntity)
         if timespan <= 0:
             return None
 
-        consumption = last.reading - first.reading
-        if consumption < 0:  # Meter reset probably
-            return None
+        consumption = _consumption_across_resets(recent_readings)
 
         days = timespan / (24 * 3600)
         if days == 0:
@@ -337,9 +335,7 @@ class IstaSeasonalConsumptionSensor(CoordinatorEntity["IstaCoordinator"], Sensor
         if not season_readings:
             return None
 
-        first = season_readings[0]
-        last = season_readings[-1]
-        return round(last.reading - first.reading, 2)
+        return _consumption_across_resets(season_readings)
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -572,6 +568,29 @@ async def async_setup_entry(
     config_entry.async_on_unload(coordinator.async_add_listener(_add_entities_callback))
     _LOGGER.debug("Initial entity check for entry %s.", config_entry.entry_id)
     _add_entities_callback()
+
+
+def _consumption_across_resets(readings: list) -> float:
+    """Return the consumption between readings, surviving counter resets.
+
+    A cumulative meter can restart (device replaced, new billing cycle) and the
+    reading then drops. Subtracting the last reading from the first produced a
+    negative consumption, or nothing at all; here each increase is added and a
+    drop starts a new cycle at its own value.
+
+    Idea from @macanakin's fork (github.com/macanakin/ista-calista, MIT).
+    """
+    ordered = [r for r in readings if getattr(r, "reading", None) is not None]
+    ordered.sort(key=lambda r: r.date)
+    if len(ordered) < 2:
+        return 0.0
+    total = 0.0
+    for previous, current in zip(ordered, ordered[1:]):
+        if current.reading >= previous.reading:
+            total += current.reading - previous.reading
+        else:
+            total += current.reading
+    return round(total, 2)
 
 
 class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
