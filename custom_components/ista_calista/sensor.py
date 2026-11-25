@@ -204,10 +204,11 @@ def _make_device_info(device: Device, serial_number: str) -> DeviceInfo:
 def _invoice_token(invoice: Invoice) -> str:
     """Return a readable token that identifies one invoice inside an entry.
 
-    The invoice ID is unique per property but is opaque. When the portal gave
-    no invoice number, the ID keeps invoices with a missing number apart.
+    Only invoices with an invoice number get their own entity, so the number
+    plus the device type identifies the invoice. The opaque portal ID is not
+    used here.
     """
-    identity = invoice.invoice_number or invoice.invoice_id or "unknown"
+    identity = invoice.invoice_number or "unknown"
     return f"{identity}_{slug(invoice.device_type)}"
 
 
@@ -551,9 +552,9 @@ async def async_setup_entry(
                 new_entities.append(IstaBillNameSensor(coordinator, config_entry, d_type))
                 invoice_tracked.add(unique_id)
 
-        # Individual Bill Entities — one per invoice with an identity
+        # Individual Bill Entities — one per invoice that has a number
         for invoice in invoices:
-            if not (invoice.invoice_number or invoice.invoice_id):
+            if not invoice.invoice_number:
                 continue
             unique_id = f"{namespace}_bill_{_invoice_token(invoice)}"
             if unique_id not in invoice_tracked:

@@ -27,10 +27,13 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
 
       - name: Build HACS release ZIP
+        # The Marketplace extracts the asset into custom_components/ista_calista,
+        # so the integration files are the root of the archive.
         run: |
           mkdir -p dist
-          zip -r dist/ista_calista.zip custom_components/ista_calista \
-            -x "*/__pycache__/*" "*.pyc" "*.pyo"
+          cd custom_components/ista_calista
+          zip -r "$GITHUB_WORKSPACE/dist/ista_calista.zip" . \
+            -x "*/__pycache__/*" "*.pyc" "*.pyo" "*/__pycache__" ".ruff_cache/*"
 
       - name: Validate release ZIP
         run: |
@@ -39,15 +42,18 @@ jobs:
           from zipfile import ZipFile
 
           archive = Path("dist/ista_calista.zip")
-          prefix = "custom_components/ista_calista/"
           with ZipFile(archive) as zip_file:
               names = zip_file.namelist()
-              assert f"{prefix}manifest.json" in names, "Integration manifest is missing"
-              assert all(name.startswith(prefix) for name in names), "Unexpected ZIP content"
+              assert "manifest.json" in names, "manifest.json must be at the root of the ZIP"
+              assert not any(
+                  name.startswith("custom_components/") for name in names
+              ), "The ZIP must not carry a custom_components/ prefix"
               assert not any(
                   "__pycache__" in name or name.endswith((".pyc", ".pyo"))
                   for name in names
               ), "Generated Python files must not be released"
+              for required in ("__init__.py", "sensor.py", "binary_sensor.py", "button.py"):
+                  assert required in names, f"{required} is missing"
           PY
 
       - name: Upload ZIP to GitHub release

@@ -608,7 +608,9 @@ undated invoices last.
 - The library follows all pages of the HTML invoice list (15 rows per page) and
   returns the merged list. The coordinator keeps the XLS history and adds the
   HTML invoice IDs.
-- A row with an ID but no invoice number still becomes a bill entity.
+- Only an invoice with an invoice number becomes an individual bill entity. A
+  row with an ID but no invoice number is listed by the services and shown by
+  the per-type `bill_name` sensor, and creates no entity.
 - Merged invoices are sorted by date, newest first, `None` last.
 - Each detailed (HTML) invoice claims at most one history (XLS) row, so two
   rows with the same date, type and amount keep their distinct IDs. Two

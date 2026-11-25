@@ -215,10 +215,10 @@ async def test_bill_sensor_without_device_type(
     assert state.state == "12.5"
 
 
-async def test_invoice_with_id_but_without_number_becomes_a_bill(
+async def test_invoice_with_id_but_without_number_has_no_bill_entity(
     recorder_mock, hass: HomeAssistant, enable_custom_integrations, mock_pycalista
 ):
-    """A paged HTML invoice has an ID and no number; it must still be an entity."""
+    """A paged HTML invoice without a number must not create a numbered bill."""
     mock_pycalista.get_devices_history.return_value = copy.deepcopy(MOCK_DEVICES)
     row = Invoice(
         invoice_id="HTM-ONLY-ID",
@@ -241,7 +241,7 @@ async def test_invoice_with_id_but_without_number_becomes_a_bill(
     entity_id = registry.async_get_entity_id(
         "sensor", DOMAIN, f"{NAMESPACE}_bill_HTM-ONLY-ID_heating"
     )
-    assert entity_id is not None
+    assert entity_id is None
 
 
 async def test_invoice_failures_are_not_fatal(
