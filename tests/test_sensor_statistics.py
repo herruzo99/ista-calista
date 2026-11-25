@@ -3,7 +3,7 @@
 import copy
 import logging
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from homeassistant.components.recorder.statistics import StatisticData
 from homeassistant.util import dt as dt_util
@@ -19,7 +19,7 @@ from tests.const import (
 )
 
 
-@patch("custom_components.ista_calista.sensor.async_add_external_statistics")
+@patch("custom_components.ista_calista.sensor.async_add_external_statistics", new_callable=AsyncMock)
 async def test_statistics_import_initial(
     mock_add_stats, recorder_mock, hass, enable_custom_integrations, mock_pycalista
 ):
@@ -49,7 +49,7 @@ async def test_statistics_import_initial(
     assert round(stats_data[2]["sum"], 2) == 80.0
 
 
-@patch("custom_components.ista_calista.sensor.async_add_external_statistics")
+@patch("custom_components.ista_calista.sensor.async_add_external_statistics", new_callable=AsyncMock)
 async def test_statistics_import_incremental(
     mock_add_stats, recorder_mock, hass, enable_custom_integrations, mock_pycalista
 ):
@@ -95,7 +95,7 @@ async def test_statistics_import_incremental(
         assert round(stats_data[0]["sum"], 2) == 80.0  # 50.5 (existing) + 29.5 (new)
 
 
-@patch("custom_components.ista_calista.sensor.async_add_external_statistics")
+@patch("custom_components.ista_calista.sensor.async_add_external_statistics", new_callable=AsyncMock)
 async def test_statistics_import_no_history(
     mock_add_stats,
     caplog,
@@ -120,7 +120,7 @@ async def test_statistics_import_no_history(
     mock_add_stats.assert_not_called()
 
 
-@patch("custom_components.ista_calista.sensor.async_add_external_statistics")
+@patch("custom_components.ista_calista.sensor.async_add_external_statistics", new_callable=AsyncMock)
 async def test_statistics_import_no_new_readings(
     mock_add_stats,
     caplog,
@@ -152,9 +152,15 @@ async def test_statistics_import_no_new_readings(
         await hass.async_block_till_done()
 
     assert "No new readings to import" in caplog.text
+    # The metadata is still synchronised once, so a unit change in a release
+    # reaches the existing series without waiting for the next reading.
+    assert mock_add_stats.call_count == 1
+    metadata, rows = mock_add_stats.call_args.args[1], mock_add_stats.call_args.args[2]
+    assert rows == []
+    assert metadata["statistic_id"] == "ista_calista:heating_123_heating"
 
 
-@patch("custom_components.ista_calista.sensor.async_add_external_statistics")
+@patch("custom_components.ista_calista.sensor.async_add_external_statistics", new_callable=AsyncMock)
 async def test_statistics_import_with_none_reading(
     mock_add_stats,
     caplog,
@@ -186,7 +192,7 @@ async def test_statistics_import_with_none_reading(
     assert stats_data[1]["sum"] == 10.0  # Increase from 500 to 510
 
 
-@patch("custom_components.ista_calista.sensor.async_add_external_statistics")
+@patch("custom_components.ista_calista.sensor.async_add_external_statistics", new_callable=AsyncMock)
 async def test_statistics_meter_reset(
     mock_add_stats, recorder_mock, hass, enable_custom_integrations, mock_pycalista
 ):

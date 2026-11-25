@@ -229,7 +229,9 @@ class IstaAverageDailySensor(CoordinatorEntity["IstaCoordinator"], SensorEntity)
         self._serial_number = serial_number
         self._attr_unique_id = f"{serial_number}_average_daily_consumption"
 
-        self._attr_native_unit_of_measurement = _device_unit(device)
+        self._attr_native_unit_of_measurement = _device_unit(
+            device, (self.coordinator.data or {}).get("billed_readings")
+        )
 
         self._attr_device_info = _make_device_info(device, serial_number)
         self.entity_description = SensorEntityDescription(
@@ -307,7 +309,9 @@ class IstaSeasonalConsumptionSensor(CoordinatorEntity["IstaCoordinator"], Sensor
         self._attr_unique_id = f"{serial_number}_seasonal_consumption"
         self._attr_translation_key = "seasonal_consumption"
 
-        self._attr_native_unit_of_measurement = _device_unit(device)
+        self._attr_native_unit_of_measurement = _device_unit(
+            device, (self.coordinator.data or {}).get("billed_readings")
+        )
 
         self._attr_device_info = _make_device_info(device, serial_number)
 
@@ -622,15 +626,23 @@ _PORTAL_UNITS: Final[dict[str, str | None]] = {
 }
 
 
-def _device_unit(device: object) -> str | None:
+def _device_unit(device: object, billed_readings: list | None = None) -> str | None:
     """Return the unit to show for a meter, from the unit the portal reports.
 
-    Older exports carry no unit column, so the historical guess by device type
-    stays as the fallback.
+    The readings export carries no unit column; the billed consumption export
+    does ("Unidad Medida"), so that is where "UN" comes from. An export with no
+    unit at all keeps the historical guess by device type.
     """
     raw = str(getattr(device, "unit", "") or "").strip().lower()
     if raw in _PORTAL_UNITS:
         return _PORTAL_UNITS[raw]
+    serial = getattr(device, "serial_number", None)
+    for reading in billed_readings or []:
+        if getattr(reading, "serial_number", None) != serial:
+            continue
+        billed_unit = str(getattr(reading, "unit", "") or "").strip().lower()
+        if billed_unit in _PORTAL_UNITS:
+            return _PORTAL_UNITS[billed_unit]
     if isinstance(device, HeatingDevice):
         return UnitOfEnergy.KILO_WATT_HOUR
     return UnitOfVolume.CUBIC_METERS
@@ -660,6 +672,7 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
         """Initialize the Ista Calista sensor."""
         super().__init__(coordinator)
         self._serial_number = serial_number
+        self._metadata_synced = False
         self.entity_description = entity_description
         self._attr_unique_id = f"{serial_number}_{entity_description.key}"
         self._attr_translation_key = entity_description.translation_key
@@ -708,6 +721,19 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
         if self.coordinator.data and "devices" in self.coordinator.data:
             return self.coordinator.data["devices"].get(self._serial_number)
         return None
+
+    def _statistics_name(self, device: object) -> str:
+        """Return the statistics name used for this meter."""
+        device_name = (
+            getattr(device, "location", "")
+            or f"Ista Device {self._serial_number[-4:]}"
+        )
+        fallback = (
+            (self.entity_description.translation_key or self.entity_description.key)
+            .replace("_", " ")
+            .title()
+        )
+        return f"{device_name} {self.name or fallback}"
 
     @property
     def native_value(self) -> StateType:
@@ -787,6 +813,25 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
 
             if not new_readings:
                 _LOGGER.debug("No new readings to import for %s.", statistic_id)
+                # The unit may have changed in a release (a heat cost allocator
+                # no longer claims kWh). Importing an empty batch updates the
+                # metadata in place, so the series keeps its history and the
+                # change does not wait for the next reading.
+                if not self._metadata_synced:
+                    self._metadata_synced = True
+                    await async_add_external_statistics(
+                        self.hass,
+                        StatisticMetaData(
+                            mean_type=StatisticMeanType.NONE,
+                            has_sum=True,
+                            name=self._statistics_name(device),
+                            source=DOMAIN,
+                            statistic_id=statistic_id,
+                            unit_of_measurement=_device_unit(device, self.coordinator.data.get("billed_readings")),
+                            unit_class=_unit_class(_device_unit(device, self.coordinator.data.get("billed_readings"))),
+                        ),
+                        [],
+                    )
                 self.hass.bus.async_fire(
                     LTS_UPDATED_EVENT,
                     {
@@ -819,7 +864,9 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
             )
             sensor_name = self.name or _fallback_name
 
-            _unit = self.entity_description.native_unit_of_measurement
+            # The unit comes from the device, not from the description: a heat
+            # cost allocator reports UN and its series must not claim kWh.
+            _unit = _device_unit(device, self.coordinator.data.get("billed_readings"))
             _unit_cls = _unit_class(_unit)
 
             metadata = StatisticMetaData(
@@ -977,7 +1024,9 @@ class IstaBilledDeviceSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity)
 
         # Unit determined by what the portal reports (except for timestamps)
         if description.device_class != SensorDeviceClass.TIMESTAMP:
-            self._attr_native_unit_of_measurement = _device_unit(device)
+            self._attr_native_unit_of_measurement = _device_unit(
+            device, (self.coordinator.data or {}).get("billed_readings")
+        )
         self._attr_device_info = _make_device_info(device, serial_number)
         _LOGGER.debug("IstaBilledDeviceSensor initialized: %s", self.unique_id)
 

@@ -247,6 +247,21 @@ This fallback performs arithmetic on optional amounts. If either amount is `None
 
 ## 8. Entity inventory
 
+### Units (0.11.0)
+
+The unit of a meter comes from the data, not from the device class: the billed
+consumption export carries `Unidad Medida` per row, and a heat cost allocator
+reports `UN`, which is an allocation unit and not energy. `_device_unit()` maps
+`UN` to no unit (`unit_class` None), `m3` to cubic metres and `kWh` to energy;
+an export with no unit keeps the old guess by device type. The billed-reading
+export is the source because the readings export has no unit column.
+
+The long-term statistics take the same unit, and the sensor syncs the metadata
+with an empty import once per setup, because Home Assistant only rewrites the
+metadata of an existing statistic when rows are imported. The history is kept:
+the statistic ID does not change. Verified: 361 rows and the same sums before
+and after, and the Energy dashboard accepts a unit-less series without an error.
+
 ### Meter device entities
 
 One device per serial in the HA device registry. Model determines the meter key and unit.
