@@ -16,17 +16,19 @@
 
         # Build pycalista-ista from GitHub to provide all required dependencies.
         # The shellHook below prepends the local sibling directory to PYTHONPATH so
-        # that the 0.8.0 development version takes precedence at runtime.
+        # that the development version takes precedence at runtime. CI has no
+        # sibling, so this version is the one CI tests against: keep it in step
+        # with manifest.json. 0.9.2 lacks PortalAccount and the suite cannot import.
         pycalista-ista-for-ha = ha.python.pkgs.buildPythonPackage rec {
           pname = "pycalista-ista";
-          version = "0.9.2";
+          version = "0.10.1";
           format = "pyproject";
 
           src = pkgs.fetchFromGitHub {
             owner = "herruzo99";
             repo = "pycalista-ista";
             rev = "v${version}";
-            hash = "sha256-I7dLItJ0N9jFnnxRwPljvLYUqB8on1x7DprqT3Sg4JY=";
+            hash = "sha256-lCh8YJHo2WkUU+oMYk4i9yyzL8HGjKIywQBVgWfPoDg=";
           };
 
           # All dependencies are now drawn from `ha.python.pkgs`, ensuring consistency.
