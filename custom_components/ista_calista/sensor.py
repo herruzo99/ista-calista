@@ -229,10 +229,7 @@ class IstaAverageDailySensor(CoordinatorEntity["IstaCoordinator"], SensorEntity)
         self._serial_number = serial_number
         self._attr_unique_id = f"{serial_number}_average_daily_consumption"
 
-        if isinstance(device, HeatingDevice):
-            self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-        else:
-            self._attr_native_unit_of_measurement = UnitOfVolume.CUBIC_METERS
+        self._attr_native_unit_of_measurement = _device_unit(device)
 
         self._attr_device_info = _make_device_info(device, serial_number)
         self.entity_description = SensorEntityDescription(
@@ -310,10 +307,7 @@ class IstaSeasonalConsumptionSensor(CoordinatorEntity["IstaCoordinator"], Sensor
         self._attr_unique_id = f"{serial_number}_seasonal_consumption"
         self._attr_translation_key = "seasonal_consumption"
 
-        if isinstance(device, HeatingDevice):
-            self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-        else:
-            self._attr_native_unit_of_measurement = UnitOfVolume.CUBIC_METERS
+        self._attr_native_unit_of_measurement = _device_unit(device)
 
         self._attr_device_info = _make_device_info(device, serial_number)
 
@@ -613,6 +607,44 @@ def _consumption_across_resets(readings: list) -> float:
     return round(total, 2)
 
 
+# The portal reports the unit of each meter in "Unidad Medida". A heat cost
+# allocator reports "UN": allocation units, not energy, so the entity carries no
+# unit and the number stays comparable with the invoice.
+_PORTAL_UNITS: Final[dict[str, str | None]] = {
+    "un": None,
+    "ud": None,
+    "uds": None,
+    "u": None,
+    "unidades": None,
+    "m3": UnitOfVolume.CUBIC_METERS,
+    "m³": UnitOfVolume.CUBIC_METERS,
+    "kwh": UnitOfEnergy.KILO_WATT_HOUR,
+}
+
+
+def _device_unit(device: object) -> str | None:
+    """Return the unit to show for a meter, from the unit the portal reports.
+
+    Older exports carry no unit column, so the historical guess by device type
+    stays as the fallback.
+    """
+    raw = str(getattr(device, "unit", "") or "").strip().lower()
+    if raw in _PORTAL_UNITS:
+        return _PORTAL_UNITS[raw]
+    if isinstance(device, HeatingDevice):
+        return UnitOfEnergy.KILO_WATT_HOUR
+    return UnitOfVolume.CUBIC_METERS
+
+
+def _unit_class(unit: str | None) -> str | None:
+    """Return the recorder unit class for a unit, or None when it has none."""
+    if unit == UnitOfEnergy.KILO_WATT_HOUR:
+        return "energy"
+    if unit == UnitOfVolume.CUBIC_METERS:
+        return "volume"
+    return None
+
+
 class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
     """Representation of an Ista Calista sensor."""
 
@@ -788,12 +820,7 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
             sensor_name = self.name or _fallback_name
 
             _unit = self.entity_description.native_unit_of_measurement
-            if _unit == UnitOfEnergy.KILO_WATT_HOUR:
-                _unit_class = "energy"
-            elif _unit == UnitOfVolume.CUBIC_METERS:
-                _unit_class = "volume"
-            else:
-                _unit_class = None
+            _unit_cls = _unit_class(_unit)
 
             metadata = StatisticMetaData(
                 mean_type=StatisticMeanType.NONE,
@@ -802,7 +829,7 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
                 source=DOMAIN,
                 statistic_id=statistic_id,
                 unit_of_measurement=_unit,
-                unit_class=_unit_class,
+                unit_class=_unit_cls,
             )
 
             statistics_to_import: list[StatisticData] = []
@@ -948,12 +975,9 @@ class IstaBilledDeviceSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity)
         # pair of brackets produced "Lectura Facturada ((1-Cocina1))".
         self._attr_translation_key = description.translation_key
 
-        # Unit determined by device type (except for timestamps)
+        # Unit determined by what the portal reports (except for timestamps)
         if description.device_class != SensorDeviceClass.TIMESTAMP:
-            if isinstance(device, HeatingDevice):
-                self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-            else:
-                self._attr_native_unit_of_measurement = UnitOfVolume.CUBIC_METERS
+            self._attr_native_unit_of_measurement = _device_unit(device)
         self._attr_device_info = _make_device_info(device, serial_number)
         _LOGGER.debug("IstaBilledDeviceSensor initialized: %s", self.unique_id)
 
