@@ -44,3 +44,14 @@ def test_readings_are_sorted_by_date_before_counting():
     readings = _readings([100.0, 110.0, 105.0])
     readings.reverse()
     assert _consumption_across_resets(readings) == 115.0
+
+
+def test_negative_and_nan_readings_are_ignored():
+    values = [100.0, -5.0, float("nan"), 110.0]
+    assert _consumption_across_resets(_readings(values)) == 10.0
+
+
+def test_readings_without_a_date_are_ignored():
+    readings = _readings([100.0, 110.0])
+    readings.append(SimpleNamespace(date=None, reading=999.0))
+    assert _consumption_across_resets(readings) == 10.0

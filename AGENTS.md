@@ -262,7 +262,7 @@ One device per serial in the HA device registry. Model determines the meter key 
 
 Meter availability requires coordinator success and the serial still in current data.
 
-Average daily consumption uses the last 30 days of history, with a last-two-reading fallback. It returns `None` for insufficient data or zero timespan. Both the daily average and the seasonal consumption sum the increases between readings and treat a drop as a new meter cycle, so a replaced meter no longer produces a negative value. The idea comes from @macanakin's fork (macanakin/ista-calista, MIT).
+Average daily consumption uses the last 30 days of history, with a last-two-reading fallback. It returns `None` for insufficient data or zero timespan. Both the daily average and the seasonal consumption sum the increases between readings and treat a drop as a new meter cycle, so a replaced meter no longer produces a negative value. Readings with a NaN, a negative value or no date are ignored, and the historical `seasons` attribute uses the same maths. The idea comes from @macanakin's fork (macanakin/ista-calista, MIT).
 
 Seasonal consumption uses last minus first reading inside the season. Its `seasons` attribute is rebuilt from in-memory history, so older seasons disappear after a restart that does not download them.
 

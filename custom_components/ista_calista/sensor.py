@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from math import isfinite
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -253,12 +254,21 @@ class IstaAverageDailySensor(CoordinatorEntity["IstaCoordinator"], SensorEntity)
         now = dt_util.now()
         thirty_days_ago = now - timedelta(days=30)
 
-        # Get readings within the last 30 days, skipping None values
-        recent_readings = [r for r in device.history if r.date >= thirty_days_ago and r.reading is not None]
+        # Keep only readings the maths can trust: a NaN or a negative value
+        # would poison the average and the timespan alike.
+        usable = [
+            r
+            for r in device.history
+            if r.reading is not None
+            and r.date is not None
+            and isfinite(r.reading)
+            and r.reading >= 0
+        ]
+        recent_readings = [r for r in usable if r.date >= thirty_days_ago]
 
         if not recent_readings or len(recent_readings) < 2:
             # Fallback to last 2 valid readings if we don't have enough in 30 days
-            recent_readings = [r for r in device.history if r.reading is not None][-2:]
+            recent_readings = usable[-2:]
 
         if len(recent_readings) < 2:
             return None
@@ -330,7 +340,9 @@ class IstaSeasonalConsumptionSensor(CoordinatorEntity["IstaCoordinator"], Sensor
 
         # Filter readings for the current season, skipping None values
         season_readings = [
-            r for r in device.history if r.date.date() >= start_date and r.reading is not None
+            r
+            for r in device.history
+            if r.date is not None and r.date.date() >= start_date and r.reading is not None
         ]
         if not season_readings:
             return None
@@ -350,6 +362,8 @@ class IstaSeasonalConsumptionSensor(CoordinatorEntity["IstaCoordinator"], Sensor
         # Simple grouping by season start year
         readings_by_season: dict[int, list] = {}
         for r in device.history:
+            if r.date is None:
+                continue
             s_year = r.date.year
             if r.date.date() < date(r.date.year, self._start_month, self._start_day):
                 s_year -= 1
@@ -357,8 +371,7 @@ class IstaSeasonalConsumptionSensor(CoordinatorEntity["IstaCoordinator"], Sensor
 
         for s_year, readings in readings_by_season.items():
             if len(readings) >= 2:
-                consumption = round(readings[-1].reading - readings[0].reading, 2)
-                seasons[s_year] = consumption
+                seasons[s_year] = _consumption_across_resets(readings)
 
         attrs["seasons"] = {f"{y}-{y+1}": cons for y, cons in sorted(seasons.items())}
         _, season_name = self._current_season
@@ -580,7 +593,14 @@ def _consumption_across_resets(readings: list) -> float:
 
     Idea from @macanakin's fork (github.com/macanakin/ista-calista, MIT).
     """
-    ordered = [r for r in readings if getattr(r, "reading", None) is not None]
+    ordered = [
+        r
+        for r in readings
+        if getattr(r, "reading", None) is not None
+        and getattr(r, "date", None) is not None
+        and isfinite(r.reading)
+        and r.reading >= 0
+    ]
     ordered.sort(key=lambda r: r.date)
     if len(ordered) < 2:
         return 0.0
