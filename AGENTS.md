@@ -253,7 +253,13 @@ The unit of a meter comes from the data, not from the device class: the billed
 consumption export carries `Unidad Medida` per row, and a heat cost allocator
 reports `UN`, which is an allocation unit and not energy. `_device_unit()` maps
 `UN` to no unit (`unit_class` None), `m3` to cubic metres and `kWh` to energy;
-an export with no unit keeps the old guess by device type. The billed-reading
+an export with no unit keeps the old guess by device type.
+
+The entity and the statistics use different units on purpose: a heat cost
+allocator shows no unit (that is what the number is) while its long-term series
+keeps kWh, because the Energy dashboard only accepts kWh or m3 as a gas source
+and drops a unit-less series. `_device_unit()` serves the entity,
+`_statistics_unit()` serves the LTS. The billed-reading
 export is the source because the readings export has no unit column.
 
 The long-term statistics take the same unit, and the sensor syncs the metadata

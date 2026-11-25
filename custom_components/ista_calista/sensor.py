@@ -615,6 +615,7 @@ def _consumption_across_resets(readings: list) -> float:
 # allocator reports "UN": allocation units, not energy, so the entity carries no
 # unit and the number stays comparable with the invoice.
 _PORTAL_UNITS: Final[dict[str, str | None]] = {
+    # "UN" is an allocation unit, not energy: the entity shows no unit.
     "un": None,
     "ud": None,
     "uds": None,
@@ -646,6 +647,18 @@ def _device_unit(device: object, billed_readings: list | None = None) -> str | N
     if isinstance(device, HeatingDevice):
         return UnitOfEnergy.KILO_WATT_HOUR
     return UnitOfVolume.CUBIC_METERS
+
+
+def _statistics_unit(device: object, billed_readings: list | None = None) -> str:
+    """Return the unit for the long-term statistics of a meter.
+
+    The Energy dashboard only accepts kWh or m3 as a gas source, and a heat cost
+    allocator is how many people follow their gas heating. The entity stays
+    unit-less because that is what the number is, but the series keeps kWh so it
+    can live in that dashboard.
+    """
+    unit = _device_unit(device, billed_readings)
+    return unit or UnitOfEnergy.KILO_WATT_HOUR
 
 
 def _unit_class(unit: str | None) -> str | None:
@@ -837,8 +850,8 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
                             name=self._statistics_name(device),
                             source=DOMAIN,
                             statistic_id=statistic_id,
-                            unit_of_measurement=_device_unit(device, self.coordinator.data.get("billed_readings")),
-                            unit_class=_unit_class(_device_unit(device, self.coordinator.data.get("billed_readings"))),
+                            unit_of_measurement=_statistics_unit(device, self.coordinator.data.get("billed_readings")),
+                            unit_class=_unit_class(_statistics_unit(device, self.coordinator.data.get("billed_readings"))),
                         ),
                         [],
                     )
@@ -876,7 +889,7 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
 
             # The unit comes from the device, not from the description: a heat
             # cost allocator reports UN and its series must not claim kWh.
-            _unit = _device_unit(device, self.coordinator.data.get("billed_readings"))
+            _unit = _statistics_unit(device, self.coordinator.data.get("billed_readings"))
             _unit_cls = _unit_class(_unit)
 
             metadata = StatisticMetaData(
