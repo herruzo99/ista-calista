@@ -17,7 +17,7 @@ Read this guide before changing the integration. Read `../pycalista-ista/AGENTS.
 5. Keep dynamic entity unique IDs stable. Registry duplicates can silently drop entities, especially for a second account.
 6. Preserve old and new billed-consumption XLS headers in the library. Issue `herruzo99/ista-calista#4` was caused by the portal rename.
 7. Run the full suite and Ruff before proposing a push. Current baseline: 114
-   tests pass and Ruff passes (HA 2025.7.4, sibling library 0.9.4).
+   tests pass and Ruff passes (HA 2025.7.4, sibling library 0.10.0).
 8. Do not claim long-term statistics work from unit tests alone. All current statistics tests mock the recorder boundary.
 9. Do not push, tag, publish, or run a release workflow unless the owner explicitly asks.
 
@@ -28,7 +28,7 @@ Read this guide before changing the integration. Read `../pycalista-ista/AGENTS.
 Current manifest:
 
 - Integration version: `0.10.0`
-- Library requirement: `pycalista-ista~=0.9.4` (needs `account_id`, `PortalAccount`,
+- Library requirement: `pycalista-ista~=0.10.0` (needs `account_id`, `PortalAccount`,
   `list_accounts` and `select_account`; 0.9.3 and older do not have them)
 - HACS minimum Home Assistant: `2026.3.0`
 - Quality scale declared: `gold` (no supporting `quality_scale.yaml` exists)
@@ -401,7 +401,7 @@ Verified on 2026-11-25 at `e30349c`:
 - Tests: **115 passed**.
 - Ruff: **passes**.
 - Nix environment: Home Assistant **2025.7.4**, Python **3.13.5**.
-- Imported library: sibling `../pycalista-ista`, version **0.9.4** (`PortalAccount`,
+- Imported library: sibling `../pycalista-ista`, version **0.10.0** (`PortalAccount`,
   `list_accounts`, `select_account`, paginated `get_invoices`).
 - Live library smoke: one property selected and verified, 63 invoices and 63 unique PDF IDs.
 - Live full-HA wiring: not run; the Home Assistant pytest harness blocks external sockets. Real HA session detachment is covered by a separate test.
@@ -410,12 +410,12 @@ Verified on 2026-11-25 at `e30349c`:
 
 `flake.nix` still pins a Nix-built `pycalista-ista` 0.9.2, but `shellHook`
 prepends `../pycalista-ista` to `PYTHONPATH`. Local tests therefore use the
-sibling 0.9.4 work tree. **Known mismatch (open):** CI without that sibling
+sibling 0.10.0 work tree. **Known mismatch (open):** CI without that sibling
 would load 0.9.2, which has no `list_accounts`, `select_account` or
 `PortalAccount`, so the integration and its config flow would fail there. The
-flake version and hash must be bumped to 0.9.4 before a release.
+flake version and hash must be bumped to 0.10.0 before a release.
 
-This matters: 0.10.0 needs 0.9.4. Until the flake pin is bumped, local tests and
+This matters: 0.10.0 needs 0.10.0. Until the flake pin is bumped, local tests and
 CI do not exercise the same library version.
 
 ### Test map and gaps
