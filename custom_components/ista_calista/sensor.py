@@ -904,8 +904,10 @@ class IstaBilledDeviceSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity)
         self._serial_number = serial_number
         self.entity_description = description
         self._attr_unique_id = f"{serial_number}_{description.key}"
-        self._attr_translation_key = f"{description.translation_key}_at_location"
-        self._attr_translation_placeholders = {"location": device.location or serial_number}
+        # The entity belongs to the meter device, so the name does not repeat
+        # the location: the portal writes it as "(1-Cocina1)" and a second
+        # pair of brackets produced "Lectura Facturada ((1-Cocina1))".
+        self._attr_translation_key = description.translation_key
 
         # Unit determined by device type (except for timestamps)
         if description.device_class != SensorDeviceClass.TIMESTAMP:

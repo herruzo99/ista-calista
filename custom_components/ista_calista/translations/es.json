@@ -1,192 +1,185 @@
 {
-    "config": {
-        "abort": {
-            "already_configured": "El dispositivo ya está configurado",
-            "reauth_successful": "La reautenticación se realizó correctamente",
-            "reconfigure_successful": "La reconfiguración se realizó con éxito",
-            "reconfigure_required": "La propiedad de esta entrada ya no está vinculada a la cuenta. Reconfigura la integración y selecciona una propiedad."
-        },
-        "error": {
-            "cannot_connect": "Error al conectar",
-            "invalid_auth": "Autenticación no válida",
-            "unknown": "Error inesperado",
-            "offset_too_recent": "La Fecha de Inicio de Consumo debe ser al menos un mes en el pasado.",
-            "invalid_date_format": "Formato de fecha inválido.",
-            "account_not_found": "Esa propiedad ya no aparece en esta cuenta. Reconfigura la integración y vuelve a seleccionar la propiedad.",
-            "no_accounts": "Esta cuenta no tiene ninguna propiedad. Comprueba la cuenta del portal ista Calista."
-        },
-        "step": {
-            "user": {
-                "title": "Conectar a ista Calista",
-                "data": {
-                    "email": "Correo electrónico",
-                    "password": "Contraseña",
-                    "consumption_offset_date": "Fecha de Inicio de Consumo",
-                    "season_start_month": "Mes de Inicio de la Temporada",
-                    "season_start_day": "Día de Inicio de la Temporada"
-                },
-                "data_description": {
-                    "email": "Introduce la dirección de correo electrónico asociada a tu cuenta de ista Calista.",
-                    "password": "Introduce la contraseña de tu cuenta de ista Calista.",
-                    "consumption_offset_date": "Selecciona la fecha desde la cual comenzar a importar datos históricos de consumo (debe ser al menos 1 mes atrás).",
-                    "season_start": "Selecciona el día y mes en el que comienza una nueva temporada de consumo."
-                },
-                "description": "Conecta tu cuenta de **ista Calista** a Home Assistant para acceder a tus datos de consumo de calefacción y agua."
-            },
-            "reconfigure": {
-                "title": "Reconfigurar ista Calista",
-                "data": {
-                    "email": "Correo electrónico",
-                    "password": "Contraseña",
-                    "consumption_offset_date": "Fecha de Inicio de Consumo",
-                    "season_start_month": "Mes de Inicio de la Temporada",
-                    "season_start_day": "Día de Inicio de la Temporada"
-                },
-                "data_description": {
-                    "email": "Introduce la dirección de correo electrónico asociada a tu cuenta de ista Calista.",
-                    "password": "Introduce la contraseña de tu cuenta de ista Calista.",
-                    "consumption_offset_date": "Selecciona la fecha desde la cual comenzar a importar datos históricos de consumo (debe ser al menos 1 mes atrás).",
-                    "season_start": "Selecciona el día y mes en el que comienza una nueva temporada de consumo."
-                },
-                "description": "Actualiza la configuración de tu cuenta de ista Calista ({email})."
-            },
-            "reauth_confirm": {
-                "title": "Volver a autenticar la integración",
-                "data": {
-                    "password": "Contraseña"
-                },
-                "description": "La autenticación para {email} ha expirado. Por favor, vuelve a introducir tu contraseña para reconectar tu cuenta de ista Calista.",
-                "data_description": {
-                    "password": "Introduce la contraseña actual de tu cuenta de ista Calista asociada a {email}."
-                }
-            },
-            "select_account": {
-                "title": "Selecciona la propiedad",
-                "data": {
-                    "account_id": "Propiedad"
-                },
-                "data_description": {
-                    "account_id": "Selecciona la propiedad del portal que debe leer esta entrada. Añade la integración otra vez para cada una de las demás propiedades de la misma cuenta."
-                },
-                "description": "La cuenta {email} tiene varias propiedades. Selecciona una propiedad para esta entrada."
-            }
-        }
+  "config": {
+    "abort": {
+      "already_configured": "El dispositivo ya está configurado",
+      "reauth_successful": "La reautenticación se realizó correctamente",
+      "reconfigure_successful": "La reconfiguración se realizó con éxito",
+      "reconfigure_required": "La propiedad de esta entrada ya no está vinculada a la cuenta. Reconfigura la integración y selecciona una propiedad."
     },
-    "options": {
-        "step": {
-            "init": {
-                "title": "Opciones de ista Calista",
-                "data": {
-                    "update_interval": "Intervalo de Actualización (horas)",
-                    "log_level": "Nivel de Registro",
-                    "season_start": "Inicio Temporada Calefacción (Mes/Día)"
-                },
-                "data_description": {
-                    "update_interval": "Frecuencia (en horas) con la que comprobar nuevos datos de consumo del portal ista Calista.",
-                    "log_level": "Establece el nivel de detalle para los registros de la integración y la librería. 'Debug' es muy detallado y solo debe usarse para solucionar problemas.",
-                    "season_start": "Selecciona el día y mes en el que comienza una nueva temporada de consumo."
-                }
-            }
-        },
-        "error": {
-            "interval_too_short": "El intervalo de actualización debe ser de al menos 1 hora."
-        }
+    "error": {
+      "cannot_connect": "Error al conectar",
+      "invalid_auth": "Autenticación no válida",
+      "unknown": "Error inesperado",
+      "offset_too_recent": "La Fecha de Inicio de Consumo debe ser al menos un mes en el pasado.",
+      "invalid_date_format": "Formato de fecha inválido.",
+      "account_not_found": "Esa propiedad ya no aparece en esta cuenta. Reconfigura la integración y vuelve a seleccionar la propiedad.",
+      "no_accounts": "Esta cuenta no tiene ninguna propiedad. Comprueba la cuenta del portal ista Calista."
     },
-    "entity": {
-        "button": {
-            "refresh_data": {
-                "name": "Actualizar Datos"
-            }
+    "step": {
+      "user": {
+        "title": "Conectar a ista Calista",
+        "data": {
+          "email": "Correo electrónico",
+          "password": "Contraseña",
+          "consumption_offset_date": "Fecha de Inicio de Consumo",
+          "season_start": "Inicio de temporada de calefacción (mes/día)"
         },
-        "sensor": {
-            "heating": {
-                "name": "Calefacción"
-            },
-            "hot_water": {
-                "name": "Agua Caliente"
-            },
-            "water": {
-                "name": "Agua"
-            },
-            "last_date": {
-                "name": "Última Fecha Medida"
-            },
-            "lts_last_import": {
-                "name": "Última Importación LTS"
-            },
-            "billed_reading": {
-                "name": "Lectura Facturada"
-            },
-            "billed_reading_at_location": {
-                "name": "Lectura Facturada"
-            },
-            "last_billed_date": {
-                "name": "Fecha Lectura Facturada"
-            },
-            "last_billed_date_type": {
-                "name": "Fecha Lectura Facturada ({device_type})"
-            },
-            "last_billed_date_at_location": {
-                "name": "Fecha Lectura Facturada ({location})"
-            },
-            "latest_invoice_amount": {
-                "name": "Importe Última Factura"
-            },
-            "invoice_amount": {
-                "name": "Importe Factura {device_type}"
-            },
-            "average_daily_consumption": {
-                "name": "Consumo Diario Promedio"
-            },
-            "seasonal_consumption": {
-                "name": "Consumo Estacional"
-            },
-            "individual_bill": {
-                "name": "Factura {invoice_number} ({device_type})"
-            },
-            "bill_name": {
-                "name": "ID de última factura: {device_type}"
-            }
+        "data_description": {
+          "email": "Introduce la dirección de correo electrónico asociada a tu cuenta de ista Calista.",
+          "password": "Introduce la contraseña de tu cuenta de ista Calista.",
+          "consumption_offset_date": "Selecciona la fecha desde la cual comenzar a importar datos históricos de consumo (debe ser al menos 1 mes atrás).",
+          "season_start": "Selecciona el día y mes en el que comienza una nueva temporada de consumo."
         },
-        "binary_sensor": {
-            "connection_status": {
-                "name": "Estado de Conexión"
-            }
+        "description": "Conecta tu cuenta de **ista Calista** a Home Assistant para acceder a tus datos de consumo de calefacción y agua."
+      },
+      "reconfigure": {
+        "title": "Reconfigurar ista Calista",
+        "data": {
+          "email": "Correo electrónico",
+          "password": "Contraseña",
+          "consumption_offset_date": "Fecha de Inicio de Consumo",
+          "season_start": "Inicio de temporada de calefacción (mes/día)"
+        },
+        "data_description": {
+          "email": "Introduce la dirección de correo electrónico asociada a tu cuenta de ista Calista.",
+          "password": "Introduce la contraseña de tu cuenta de ista Calista.",
+          "consumption_offset_date": "Selecciona la fecha desde la cual comenzar a importar datos históricos de consumo (debe ser al menos 1 mes atrás).",
+          "season_start": "Selecciona el día y mes en el que comienza una nueva temporada de consumo."
+        },
+        "description": "Actualiza la configuración de tu cuenta de ista Calista ({email})."
+      },
+      "reauth_confirm": {
+        "title": "Volver a autenticar la integración",
+        "data": {
+          "password": "Contraseña"
+        },
+        "description": "La autenticación para {email} ha expirado. Por favor, vuelve a introducir tu contraseña para reconectar tu cuenta de ista Calista.",
+        "data_description": {
+          "password": "Introduce la contraseña actual de tu cuenta de ista Calista asociada a {email}."
         }
-    },
-    "services": {
-        "download_invoice": {
-            "name": "Descargar factura",
-            "description": "Descarga un PDF de factura usando su ID específico, para la propiedad que la posee.",
-            "fields": {
-                "invoice_id": {
-                    "name": "ID de factura",
-                    "description": "El ID único de la factura, de un atributo de sensor de factura o de la respuesta de get_invoices."
-                },
-                "entry_id": {
-                    "name": "ID de entrada",
-                    "description": "Entrada de configuración de la propiedad, de la respuesta de get_invoices. Úsala cuando dos propiedades compartan un ID de factura."
-                },
-                "account_id": {
-                    "name": "ID de propiedad",
-                    "description": "ID de la propiedad del portal, de la respuesta de get_invoices. Úsalo cuando dos propiedades compartan un ID de factura."
-                }
-            }
+      },
+      "select_account": {
+        "title": "Selecciona la propiedad",
+        "data": {
+          "account_id": "Propiedad"
         },
-        "get_invoices": {
-            "name": "Obtener facturas",
-            "description": "Devuelve una lista detallada de todas las facturas encontradas en tu cuenta."
-        }
-    },
-    "exceptions": {
-        "authentication_exception": {
-            "message": "Error de autenticación para {email}. Por favor, verifica tus credenciales e intenta autenticarte de nuevo."
+        "data_description": {
+          "account_id": "Selecciona la propiedad del portal que debe leer esta entrada. Añade la integración otra vez para cada una de las demás propiedades de la misma cuenta."
         },
-        "connection_exception": {
-            "message": "No se puede conectar al servicio ista Calista. Por favor, comprueba tu conexión de red e inténtalo más tarde."
-        }
-    },
-    "device": {
-        "unknown": "Dispositivo Desconocido"
+        "description": "La cuenta {email} tiene varias propiedades. Selecciona una propiedad para esta entrada."
+      }
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opciones de ista Calista",
+        "data": {
+          "update_interval": "Intervalo de Actualización (horas)",
+          "log_level": "Nivel de Registro",
+          "season_start": "Inicio Temporada Calefacción (Mes/Día)"
+        },
+        "data_description": {
+          "update_interval": "Frecuencia (en horas) con la que comprobar nuevos datos de consumo del portal ista Calista.",
+          "log_level": "Establece el nivel de detalle para los registros de la integración y la librería. 'Debug' es muy detallado y solo debe usarse para solucionar problemas.",
+          "season_start": "Selecciona el día y mes en el que comienza una nueva temporada de consumo."
+        }
+      }
+    },
+    "error": {
+      "interval_too_short": "El intervalo de actualización debe ser de al menos 1 hora."
+    }
+  },
+  "entity": {
+    "button": {
+      "refresh_data": {
+        "name": "Actualizar Datos"
+      }
+    },
+    "sensor": {
+      "heating": {
+        "name": "Calefacción"
+      },
+      "hot_water": {
+        "name": "Agua Caliente"
+      },
+      "water": {
+        "name": "Agua"
+      },
+      "last_date": {
+        "name": "Última Fecha Medida"
+      },
+      "lts_last_import": {
+        "name": "Última Importación LTS"
+      },
+      "billed_reading": {
+        "name": "Lectura Facturada"
+      },
+      "billed_reading_at_location": {
+        "name": "Lectura Facturada ({location})"
+      },
+      "last_billed_date": {
+        "name": "Fecha Lectura Facturada"
+      },
+      "last_billed_date_type": {
+        "name": "Fecha Lectura Facturada ({device_type})"
+      },
+      "last_billed_date_at_location": {
+        "name": "Fecha Lectura Facturada ({location})"
+      },
+      "latest_invoice_amount": {
+        "name": "Importe Última Factura"
+      },
+      "invoice_amount": {
+        "name": "Importe Factura {device_type}"
+      },
+      "average_daily_consumption": {
+        "name": "Consumo Diario Promedio"
+      },
+      "seasonal_consumption": {
+        "name": "Consumo Estacional"
+      },
+      "individual_bill": {
+        "name": "Factura {invoice_number} ({device_type})"
+      },
+      "bill_name": {
+        "name": "ID de última factura: {device_type}"
+      }
+    },
+    "binary_sensor": {
+      "connection_status": {
+        "name": "Estado de Conexión"
+      }
+    }
+  },
+  "services": {
+    "download_invoice": {
+      "name": "Descargar factura",
+      "description": "Descarga un PDF de factura usando su ID específico, para la propiedad que la posee.",
+      "fields": {
+        "invoice_id": {
+          "name": "ID de factura",
+          "description": "El ID único de la factura, de un atributo de sensor de factura o de la respuesta de get_invoices."
+        },
+        "entry_id": {
+          "name": "ID de entrada",
+          "description": "Entrada de configuración de la propiedad, de la respuesta de get_invoices. Úsala cuando dos propiedades compartan un ID de factura."
+        },
+        "account_id": {
+          "name": "ID de propiedad",
+          "description": "ID de la propiedad del portal, de la respuesta de get_invoices. Úsalo cuando dos propiedades compartan un ID de factura."
+        }
+      }
+    },
+    "get_invoices": {
+      "name": "Obtener facturas",
+      "description": "Devuelve una lista detallada de todas las facturas encontradas en tu cuenta."
+    }
+  },
+  "exceptions": {
+    "authentication_exception": {
+      "message": "Error de autenticación para {email}. Por favor, verifica tus credenciales e intenta autenticarte de nuevo."
+    }
+  },
+  "device": {}
 }
