@@ -676,6 +676,16 @@ class IstaSensor(CoordinatorEntity["IstaCoordinator"], SensorEntity):
         self.entity_description = entity_description
         self._attr_unique_id = f"{serial_number}_{entity_description.key}"
         self._attr_translation_key = entity_description.translation_key
+        # The description carries the historical kWh/m3 guess. A heat cost
+        # allocator reports UN, so the unit comes from the data instead, and the
+        # device class goes with it: an ENERGY entity without a unit is invalid.
+        device = coordinator.data["devices"].get(serial_number)
+        if device is not None:
+            billed = (coordinator.data or {}).get("billed_readings")
+            unit = _device_unit(device, billed)
+            self._attr_native_unit_of_measurement = unit
+            if unit is None:
+                self._attr_device_class = None
         self._stats_import_lock = asyncio.Lock()
 
         self._attr_device_info = _make_device_info(coordinator.data["devices"][serial_number], serial_number)
