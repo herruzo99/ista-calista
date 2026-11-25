@@ -435,7 +435,12 @@ CI do not exercise the same library version.
 - Release workflow runs on `v*` tags or manual dispatch. It does not run tests.
 - Tests workflow runs on `main` pushes/PRs. Validation workflow also runs nightly and on manual dispatch.
 - A tag push can therefore release code that did not pass the main-branch test workflow.
-- Release ZIP contains `custom_components/ista_calista/` and is validated before upload.
+- Release ZIP contains the integration files at its root (the Marketplace
+  extracts the asset into `custom_components/ista_calista/`), and is validated
+  before upload.
+- The workflow that runs comes from the tagged commit. A tag whose commit still
+  has an older `release.yml` builds with that older file: dispatch `release.yml`
+  from `main` with `tag=<tag>` instead of pushing such a tag.
 - GitHub releases `v0.9.2` and older currently have no ZIP assets. HACS asset downloads remain broken until the workflow creates one.
 - Codecov upload is configured to fail when its token is absent.
 - Manifest minimum HA is 2026.3.0, but tests run on 2025.7.4.
