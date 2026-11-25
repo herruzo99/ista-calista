@@ -21,14 +21,14 @@
         # with manifest.json. 0.9.2 lacks PortalAccount and the suite cannot import.
         pycalista-ista-for-ha = ha.python.pkgs.buildPythonPackage rec {
           pname = "pycalista-ista";
-          version = "0.10.1";
+          version = "0.11.0";
           format = "pyproject";
 
           src = pkgs.fetchFromGitHub {
             owner = "herruzo99";
             repo = "pycalista-ista";
             rev = "v${version}";
-            hash = "sha256-lCh8YJHo2WkUU+oMYk4i9yyzL8HGjKIywQBVgWfPoDg=";
+            hash = "sha256-zyWnz6giQlywmPgEcl6YRWEbmQrGB0Y6Wq7qCvRpVaM=";
           };
 
           # All dependencies are now drawn from `ha.python.pkgs`, ensuring consistency.

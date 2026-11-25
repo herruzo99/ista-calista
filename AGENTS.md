@@ -423,6 +423,14 @@ Verified on 2026-11-25 at `e30349c`:
 
 ### Local library shadowing
 
+**Release step:** if `manifest.json` requires a new library version, update
+`flake.nix` (`version` and `hash`, from `nix flake prefetch
+github:herruzo99/pycalista-ista/v<version>`) in the same commit. CI has no
+sibling checkout, so it tests the flake pin; a stale pin fails the suite with
+`__init__() takes from 2 to 3 positional arguments but 4 were given` (0.11.0) or
+`cannot import name 'PortalAccount'` (0.9.2) while the local run stays green.
+Verify with `nix develop --command env PYTHONPATH= pytest`.
+
 `flake.nix` still pins a Nix-built `pycalista-ista` 0.9.2, but `shellHook`
 prepends `../pycalista-ista` to `PYTHONPATH`. Local tests therefore use the
 sibling 0.10.0 work tree. **Known mismatch (open):** CI without that sibling
